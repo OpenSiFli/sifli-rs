@@ -24,6 +24,8 @@ pub mod lcdc;
 pub mod dma;
 #[cfg(feature = "usb")]
 pub mod usb;
+pub mod syscfg;
+pub mod efuse;
 #[cfg(feature = "_time-driver")]
 pub mod time_driver;
 
