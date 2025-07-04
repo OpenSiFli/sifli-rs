@@ -200,6 +200,17 @@ impl HpsysPin {
         }
     }
 
+    pub fn set_as_analog(&mut self) {
+        assert!(self.pin <= 38, "Pin {} is not an analog pin!", self.pin);
+        self.pinmux().pad_pa0_38(self.pin as _).modify(|w| {
+            w.set_pe(false);
+            w.set_ie(false);
+            w.set_fsel(0b1111);
+        });
+
+        // TODO: Set AonPE
+    }
+
     pub fn is_set_as_output(&self) -> bool {
         let bit = if self.pin / 32 == 0 {
             self.gpio().doesr0().read().0

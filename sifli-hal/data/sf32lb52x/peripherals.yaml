@@ -106,3 +106,6 @@ hcpu:
   - name: IWDT
     enable_reset: false
     clock: clk_wdt
+  
+  - name: ADC_VBAT
+    enable_reset: false

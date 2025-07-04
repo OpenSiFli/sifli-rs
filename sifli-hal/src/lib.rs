@@ -15,6 +15,7 @@ pub mod timer;
 pub mod time;
 pub mod pmu;
 pub mod usart;
+pub mod adc;
 pub mod lcdc;
 #[cfg(feature = "_time-driver")]
 pub mod time_driver;
