@@ -22,6 +22,7 @@ pub mod adc;
 pub mod lcdc;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
+pub mod mailbox;
 #[cfg(feature = "usb")]
 pub mod usb;
 #[cfg(feature = "_time-driver")]
