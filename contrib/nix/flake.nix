@@ -45,7 +45,7 @@
               clippy
               rustc
               cargo
-              rustfmt
+              # rustfmt
               rust-src
               targets."thumbv8m.main-none-eabihf".stable.rust-std
               llvm-tools

@@ -1,8 +1,9 @@
 [target.thumbv8m.main-none-eabihf]
 # Currently, probe-rs can only execute `attach`, not `run` or `download`.
 # You can refer to the Download and Debug documentation for more information.
-runner = 'sftool -c SF32LB52 --port <YOUR_PORT_HERE> write_flash ftab.bin@0x12000000'
+# runner = 'sftool -c SF32LB52 --port <YOUR_PORT_HERE> write_flash ftab.bin@0x12000000'
 #  probe-rs attach --chip SF32LB52 target/thumbv8m.main-none-eabihf/debug/usb_serial
+runner = '.cargo/flash_and_debug.sh'
 
 # Cortex-M33 has MSPLIM, so we don't need flip-link
 # linker= "flip-link"
@@ -11,5 +12,9 @@ runner = 'sftool -c SF32LB52 --port <YOUR_PORT_HERE> write_flash ftab.bin@0x1200
 target = "thumbv8m.main-none-eabihf"
 
 [env]
-DEFMT_LOG = "info"
+DEFMT_LOG = "debug"
 SIFLI_UART_DEBUG = "1"
+# SIFLI_SFTOOL_PORT = "YOUR_PORT_HERE"
+SIFLI_SFTOOL_PORT = "/dev/tty.usbmodem5ABA0718641"
+# SIFLI_SFTOOL_EXTRA_ARGS = "--compat true"
+# SIFLI_PROBE_EXTRA_ARGS = ""

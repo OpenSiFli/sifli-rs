@@ -25,3 +25,4 @@ temp/
 # macOS
 .DS_Store
 AGENTS.md
+docs/dev_notes
