@@ -213,12 +213,12 @@ fn generate_rcc_impls(peripherals: &Peripherals, fieldsets: &BTreeMap<String, Fi
     implementations.extend(quote! {use crate::time::Hertz;});
     for peripheral in &peripherals.hcpu {
         if let Some(clock) = peripheral.clock.clone() {
-            let clock_fn_ident = format_ident!("get_{}_freq", clock);
+            let clock_name_ident = format_ident!("{}", clock);
             let peripheral_name_ident = format_ident!("{}", peripheral.name);
             let impl_tokens = quote! {
                 impl crate::rcc::SealedRccGetFreq for #peripheral_name_ident {
                     fn get_freq() -> Option<Hertz> {
-                        crate::rcc::#clock_fn_ident()
+                        crate::rcc::clocks().#clock_name_ident.into()
                     }
                 }
                 impl crate::rcc::RccGetFreq for #peripheral_name_ident {}

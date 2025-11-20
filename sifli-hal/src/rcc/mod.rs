@@ -2,11 +2,10 @@ use critical_section::CriticalSection;
 
 mod clock;
 pub use clock::*;
-
-mod clock_configure;
-pub use clock_configure::*;
+pub mod mux;
 
 use crate::time::Hertz;
+
 
 // TODO: should we split this into `RccEnable` and `RccReset` ?
 pub(crate) trait SealedRccEnableReset {

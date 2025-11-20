@@ -1,5 +1,6 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 // This mod MUST go first, so that the others see its macros.
 pub(crate) mod fmt;
@@ -73,7 +74,7 @@ pub mod config {
     impl Default for Config {
         fn default() -> Self {
             Self {
-                rcc: rcc::Config::new_keep(),
+                rcc: rcc::Config::default(),
                 gpio1_it_priority: interrupt::Priority::P3,
             }
         }
@@ -94,7 +95,7 @@ pub fn init(config: Config) -> Peripherals {
     let p = Peripherals::take();
 
     unsafe {
-        config.rcc.apply();
+        rcc::init(config.rcc);
 
         #[cfg(feature = "_time-driver")]
         time_driver::init();
