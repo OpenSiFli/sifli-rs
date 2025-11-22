@@ -1,15 +1,15 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use std::collections::BTreeMap;
 use std::process::Command;
 
 use proc_macro2::TokenStream;
-use quote::quote;
 use quote::format_ident;
+use quote::quote;
 
 mod build_serde;
 // Structures imported from build_serde.rs
@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Retrieve all enabled features
     let chip_name = match env::vars()
         .map(|(a, _)| a)
-        .filter(|x| x.starts_with("CARGO_FEATURE_SF32"))
+        // Only keep chip features like CARGO_FEATURE_SF32LB52X, ignore *_LCPU helper features.
+        .filter(|x| x.starts_with("CARGO_FEATURE_SF32") && !x.ends_with("_LCPU"))
         .get_one()
     {
         Ok(x) => x,
@@ -45,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("cargo:rerun-if-changed=data/{}", chip_name);
-    let data_dir = Path::new("data").join(chip_name);
+    let data_dir = Path::new("data").join(&chip_name);
 
     // Read and parse HPSYS_RCC.yaml
     let rcc_path = data_dir.join("HPSYS_RCC.yaml");
@@ -135,11 +136,184 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dma_impls = generate_dma_impls(&dma);
     token_stream.extend(dma_impls);
 
-    // Write to file
+    // Write main HAL codegen output to file.
     let mut file = File::create(&dest_path).unwrap();
     write!(file, "{}", token_stream).unwrap();
     rustfmt(&dest_path);
+
+    // Optionally generate LCPU-related constants from SDK C arrays for sf32lb52x.
+    if env::var("CARGO_FEATURE_SF32LB52X_LCPU").is_ok() {
+        generate_sf32lb52x_lcpu_consts(&out_dir, &chip_name)?;
+    }
+
     Ok(())
+}
+
+fn generate_sf32lb52x_lcpu_consts(
+    out_dir: &Path,
+    chip_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if chip_name != "sf32lb52x" {
+        panic!("feature `sf32lb52x-lcpu` is only supported for sf32lb52x");
+    }
+
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let sdk_root = manifest_dir.join("..").join("contrib/sdk");
+
+    let fw_path = sdk_root
+        .join("example/rom_bin/lcpu_general_ble_img/lcpu_52x.c");
+    let patch_a3_path = sdk_root.join("drivers/cmsis/sf32lb52x/lcpu_patch.c");
+    let patch_letter_path = sdk_root.join("drivers/cmsis/sf32lb52x/lcpu_patch_rev_b.c");
+
+    println!("cargo:rerun-if-changed={}", fw_path.display());
+    println!("cargo:rerun-if-changed={}", patch_a3_path.display());
+    println!("cargo:rerun-if-changed={}", patch_letter_path.display());
+
+    let fw_words = parse_c_u32_array(&fw_path, "g_lcpu_bin")?;
+    let patch_a3_list_words = parse_c_u32_array(&patch_a3_path, "g_lcpu_patch_list")?;
+    let patch_a3_bin_words = parse_c_u32_array(&patch_a3_path, "g_lcpu_patch_bin")?;
+    let patch_letter_list_words =
+        parse_c_u32_array(&patch_letter_path, "g_lcpu_patch_list")?;
+    let patch_letter_bin_words =
+        parse_c_u32_array(&patch_letter_path, "g_lcpu_patch_bin")?;
+
+    fn words_to_le_bytes(words: &[u32]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(words.len() * 4);
+        for &w in words {
+            out.extend_from_slice(&w.to_le_bytes());
+        }
+        out
+    }
+
+    let fw_bytes = words_to_le_bytes(&fw_words);
+    let patch_a3_list_bytes = words_to_le_bytes(&patch_a3_list_words);
+    let patch_a3_bin_bytes = words_to_le_bytes(&patch_a3_bin_words);
+    let patch_letter_list_bytes = words_to_le_bytes(&patch_letter_list_words);
+    let patch_letter_bin_bytes = words_to_le_bytes(&patch_letter_bin_words);
+
+    let dest_path = out_dir.join("sf32lb52x_lcpu.rs");
+    let mut file = File::create(&dest_path)?;
+
+    fn write_u8_array(
+        file: &mut File,
+        const_name: &str,
+        bytes: &[u8],
+    ) -> std::io::Result<()> {
+        writeln!(
+            file,
+            "const {}: [u8; {}] = [",
+            const_name,
+            bytes.len()
+        )?;
+        for (i, b) in bytes.iter().enumerate() {
+            if i % 12 == 0 {
+                write!(file, "    ")?;
+            }
+            write!(file, "0x{:02X}, ", b)?;
+            if i % 12 == 11 {
+                writeln!(file)?;
+            }
+        }
+        if !bytes.len().is_multiple_of(12) {
+            writeln!(file)?;
+        }
+        writeln!(file, "];")?;
+        Ok(())
+    }
+
+    writeln!(
+        file,
+        "// Auto-generated from SiFli-SDK C arrays for SF32LB52x LCPU.\n"
+    )?;
+
+    write_u8_array(&mut file, "SF32LB52X_LCPU_FIRMWARE_BYTES", &fw_bytes)?;
+    writeln!(
+        file,
+        "pub const SF32LB52X_LCPU_FIRMWARE: &[u8] = &SF32LB52X_LCPU_FIRMWARE_BYTES;\n"
+    )?;
+
+    write_u8_array(
+        &mut file,
+        "SF32LB52X_LCPU_PATCH_A3_LIST_BYTES",
+        &patch_a3_list_bytes,
+    )?;
+    writeln!(
+        file,
+        "pub const SF32LB52X_LCPU_PATCH_A3_LIST: &[u8] = &SF32LB52X_LCPU_PATCH_A3_LIST_BYTES;\n"
+    )?;
+
+    write_u8_array(
+        &mut file,
+        "SF32LB52X_LCPU_PATCH_A3_BIN_BYTES",
+        &patch_a3_bin_bytes,
+    )?;
+    writeln!(
+        file,
+        "pub const SF32LB52X_LCPU_PATCH_A3_BIN: &[u8] = &SF32LB52X_LCPU_PATCH_A3_BIN_BYTES;\n"
+    )?;
+
+    write_u8_array(
+        &mut file,
+        "SF32LB52X_LCPU_PATCH_LETTER_LIST_BYTES",
+        &patch_letter_list_bytes,
+    )?;
+    writeln!(
+        file,
+        "pub const SF32LB52X_LCPU_PATCH_LETTER_LIST: &[u8] = &SF32LB52X_LCPU_PATCH_LETTER_LIST_BYTES;\n"
+    )?;
+
+    write_u8_array(
+        &mut file,
+        "SF32LB52X_LCPU_PATCH_LETTER_BIN_BYTES",
+        &patch_letter_bin_bytes,
+    )?;
+    writeln!(
+        file,
+        "pub const SF32LB52X_LCPU_PATCH_LETTER_BIN: &[u8] = &SF32LB52X_LCPU_PATCH_LETTER_BIN_BYTES;\n"
+    )?;
+
+    Ok(())
+}
+
+fn parse_c_u32_array(path: &Path, symbol: &str) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(path)?;
+
+    let decl_pos = content
+        .find(symbol)
+        .ok_or_else(|| format!("symbol `{}` not found in {}", symbol, path.display()))?;
+    let after_decl = &content[decl_pos..];
+    let brace_start_rel = after_decl
+        .find('{')
+        .ok_or_else(|| format!("`{{` not found after symbol `{}` in {}", symbol, path.display()))?;
+    let brace_start = decl_pos + brace_start_rel;
+    let after_brace = &content[brace_start + 1..];
+    let brace_end_rel = after_brace
+        .find('}')
+        .ok_or_else(|| format!("`}}` not found for symbol `{}` in {}", symbol, path.display()))?;
+    let brace_end = brace_start + 1 + brace_end_rel;
+
+    let inner = &content[brace_start + 1..brace_end];
+
+    let mut values = Vec::new();
+    for raw in inner.split(&[',', '\n', '\r', '\t', ' '][..]) {
+        let mut tok = raw.trim();
+        if tok.is_empty() {
+            continue;
+        }
+        tok = tok.trim_end_matches(['u', 'U', 'l', 'L']);
+        if tok.is_empty() {
+            continue;
+        }
+
+        let value = if tok.starts_with("0x") || tok.starts_with("0X") {
+            u32::from_str_radix(&tok[2..], 16)?
+        } else {
+            tok.parse::<u32>()?
+        };
+        values.push(value);
+    }
+
+    Ok(values)
 }
 
 fn generate_rcc_impls(peripherals: &Peripherals, fieldsets: &BTreeMap<String, FieldSet>) -> TokenStream {
