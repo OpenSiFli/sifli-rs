@@ -136,6 +136,10 @@ pub struct PatchRegion;
 impl PatchRegion {
     // ===== A3 and earlier =====
 
+    /// A3 patch record header magic value ("PTCH").
+    /// Reference: `SiFli-SDK/drivers/Include/bf0_hal_patch.h:83`
+    pub const A3_MAGIC: u32 = 0x5054_4348;
+
     /// Patch code start address for A3.
     /// Reference: `SiFli-SDK/drivers/cmsis/sf32lb52x/mem_map.h:328`
     pub const A3_CODE_START: usize = 0x2040_6000;
@@ -190,6 +194,61 @@ impl LpsysRam {
     pub const CODE_START: usize = Self::BASE;
 }
 
+/// IPC mailbox buffer layout (HCPU view).
+#[derive(Debug, Clone, Copy)]
+pub struct IpcRegion;
+
+impl IpcRegion {
+    /// Mailbox buffer size for CH1 (bytes).
+    pub const BUF_SIZE: usize = 512;
+
+    /// HCPU -> LCPU (CH1) TX buffer start, HCPU view.
+    pub const HCPU_TO_LCPU_CH1: usize = RomControlBlock::HCPU2LCPU_MB_CH1_BUF_START_ADDR;
+    /// HCPU -> LCPU (CH2) TX buffer start, HCPU view.
+    pub const HCPU_TO_LCPU_CH2: usize = 0x2007_FC00;
+
+    /// LCPU -> HCPU (CH1) RX buffer start, HCPU view, Rev A/A3.
+    pub const LCPU_TO_HCPU_CH1_A3: usize = 0x2040_5C00;
+
+    /// LCPU -> HCPU (CH1) RX buffer start, HCPU view, Rev B/Letter.
+    pub const LCPU_TO_HCPU_CH1_REV_B: usize = 0x2040_2800;
+
+    /// LCPU -> HCPU (CH2) RX buffer start, HCPU view, Rev A/A3.
+    pub const LCPU_TO_HCPU_CH2_A3: usize = 0x2040_5E00;
+
+    /// LCPU -> HCPU (CH2) RX buffer start, HCPU view, Rev B/Letter.
+    pub const LCPU_TO_HCPU_CH2_REV_B: usize = 0x2040_2A00;
+
+    /// HCPU SRAM -> LCPU alias offset (for sharing TX buffer).
+    pub const HCPU_TO_LCPU_OFFSET: usize = 0x0A00_0000;
+
+    /// Convert HCPU SRAM address to LCPU view.
+    #[inline]
+    pub const fn hcpu_to_lcpu_addr(addr: usize) -> usize {
+        addr + Self::HCPU_TO_LCPU_OFFSET
+    }
+
+    /// Select LCPU -> HCPU buffer start by revision.
+    #[inline]
+    pub fn lcpu_to_hcpu_start(rev: ChipRevision) -> usize {
+        if rev.is_letter_series() {
+            Self::LCPU_TO_HCPU_CH1_REV_B
+        } else {
+            Self::LCPU_TO_HCPU_CH1_A3
+        }
+    }
+
+    /// Select LCPU -> HCPU CH2 buffer start by revision.
+    #[inline]
+    pub fn lcpu_to_hcpu_ch2_start(rev: ChipRevision) -> usize {
+        if rev.is_letter_series() {
+            Self::LCPU_TO_HCPU_CH2_REV_B
+        } else {
+            Self::LCPU_TO_HCPU_CH2_A3
+        }
+    }
+}
+
 //=============================================================================
 // Errors
 //=============================================================================
@@ -214,14 +273,14 @@ pub enum Error {
 /// Configure LCPU ROM parameters.
 ///
 /// Replaces `lcpu_rom_config`.
-pub fn rom_config(revision: ChipRevision, config: &RomConfig) -> Result<(), Error> {
-    let base = RomControlBlock::address(revision);
-    let is_letter = revision.is_letter_series();
+    pub fn rom_config(revision: ChipRevision, config: &RomConfig) -> Result<(), Error> {
+        let base = RomControlBlock::address(revision);
+        let is_letter = revision.is_letter_series();
 
-    // Calculate size to clear/write.
-    // A3: 0x40 (64 bytes)
-    // Letter: 0xCC (204 bytes) -> sizeof(RomControlBlock) is 204
-    let size = if is_letter {
+        // Calculate size to clear/write.
+        // A3: 0x40 (64 bytes)
+        // Letter: 0xCC (204 bytes) -> sizeof(RomControlBlock) is 204
+        let size = if is_letter {
         mem::size_of::<RomControlBlock>()
     } else {
         0x40 // LCPU_CONFIG_ROM_SIZE

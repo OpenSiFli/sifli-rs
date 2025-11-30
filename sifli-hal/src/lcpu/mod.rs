@@ -587,7 +587,8 @@ impl<'d, M: crate::mode::Mode> Lcpu<'d, M> {
 /// Ensure LPSYS HCLK stays ≤ 24 MHz while loading the LCPU image.
 ///
 /// Mirrors `bf0_lcpu_init.c:170-176` in the SDK.
-fn check_lcpu_frequency() -> Result<(), LcpuError> {
+/// Returns the final HCLK frequency on success.
+fn check_lcpu_frequency() -> Result<u32, LcpuError> {
     const MAX_LOAD_FREQ_HZ: u32 = 24_000_000;
 
     // 1. Compute current LPSYS HCLK frequency.
@@ -596,7 +597,7 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
         None => {
             // If we cannot get HCLK (e.g. 48MHz source not ready), conservatively skip adjustment.
             warn!("LPSYS HCLK frequency unknown, skipping load-time check");
-            return Ok(());
+            return Ok(0);
         }
     };
     let hdiv = crate::lpsys_rcc::get_hclk_lpsys_div();
@@ -607,7 +608,7 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
             "LPSYS HCLK within limit for LCPU loading: {} Hz (HDIV1={})",
             hclk_hz, hdiv
         );
-        return Ok(());
+        return Ok(hclk_hz);
     }
 
     warn!(
@@ -653,7 +654,7 @@ fn check_lcpu_frequency() -> Result<(), LcpuError> {
         hclk_hz, new_hclk_hz, new_hdiv
     );
 
-    Ok(())
+    Ok(new_hclk_hz)
 }
 
 /// Install patches and perform RF calibration.
