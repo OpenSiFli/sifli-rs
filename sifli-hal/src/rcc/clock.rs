@@ -1,12 +1,14 @@
 use crate::pac::{HPSYS_CFG, PMUC};
 
 use crate::cortex_m_blocking_delay_us;
-use crate::pac::hpsys_rcc::vals::{SelPeri, SelSys, SelTick};
+pub use crate::pac::hpsys_rcc::vals::mux::{
+    Lpsel, Mpisel, Perisel, Rtcsel, Ticksel, Usbsel, Wdtsel,
+};
+pub use crate::pac::hpsys_rcc::vals::{Dllstg as DllStage, Pdiv as PclkPrescaler, Sysclk};
 use crate::pac::{HPSYS_AON, HPSYS_RCC};
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicU8, Ordering, compiler_fence};
+use core::sync::atomic::{compiler_fence, AtomicU8, Ordering};
 
-use crate::rcc::mux::ClockMux;
 use crate::time::{Hertz, MaybeHertz};
 use core::ops;
 
@@ -50,10 +52,10 @@ pub(crate) fn get_hclk_freq() -> Option<Hertz> {
 /// Get current sysclk frequency from hardware registers
 pub(crate) fn get_clk_sys_freq() -> Option<Hertz> {
     match HPSYS_RCC.csr().read().sel_sys() {
-        SelSys::Hrc48 => get_hrc48_freq(),
-        SelSys::Hxt48 => get_hxt48_freq(),
-        SelSys::Dbl96 => None, // Not implemented
-        SelSys::Dll1 => get_clk_dll1_freq(),
+        Sysclk::Hrc48 => get_hrc48_freq(),
+        Sysclk::Hxt48 => get_hxt48_freq(),
+        Sysclk::Dbl96 => None, // Not implemented
+        Sysclk::Dll1 => get_clk_dll1_freq(),
     }
 }
 
@@ -80,7 +82,7 @@ pub(crate) fn get_clk_dll1_freq() -> Option<Hertz> {
     let dllcr = HPSYS_RCC.dllcr(0).read();
     if dllcr.en() {
         Some(Hertz(
-            24_000_000 * (dllcr.stg() + 1) as u32 / (dllcr.out_div2_en() as u32 + 1),
+            24_000_000 * (dllcr.stg().to_bits() + 1) as u32 / (dllcr.out_div2_en() as u32 + 1),
         ))
     } else {
         None
@@ -92,7 +94,7 @@ pub(crate) fn get_clk_dll2_freq() -> Option<Hertz> {
     let dllcr = HPSYS_RCC.dllcr(1).read();
     if dllcr.en() {
         Some(Hertz(
-            24_000_000 * (dllcr.stg() + 1) as u32 / (dllcr.out_div2_en() as u32 + 1),
+            24_000_000 * (dllcr.stg().to_bits() + 1) as u32 / (dllcr.out_div2_en() as u32 + 1),
         ))
     } else {
         None
@@ -100,7 +102,7 @@ pub(crate) fn get_clk_dll2_freq() -> Option<Hertz> {
 }
 
 /// Get USB clock source from hardware registers
-pub(crate) fn get_clk_usb_source() -> crate::pac::hpsys_rcc::vals::SelUsbc {
+pub(crate) fn get_clk_usb_source() -> Usbsel {
     HPSYS_RCC.csr().read().sel_usbc()
 }
 
@@ -121,16 +123,34 @@ const DLL_STG_STEP: Hertz = Hertz(24_000_000);
 const DLL_MIN_FREQ: Hertz = Hertz(24_000_000);
 const DLL_MAX_FREQ: Hertz = Hertz(384_000_000);
 
-// - MARK: Impls
+// - MARK: Clock mux helpers
 
-/// System clock source
-#[repr(u8)]
-pub enum Sysclk {
-    HRC48 = 0,
-    HXT48 = 1,
-    DBL96 = 2,
-    DLL1 = 3,
-    WDT = 4,
+/// Clock multiplexer configuration
+#[non_exhaustive]
+pub struct ClockMux {
+    pub rtcsel: Rtcsel,
+    pub wdtsel: Wdtsel,
+    pub usbsel: Usbsel,
+    pub perisel: Perisel,
+    pub mpi1sel: Mpisel,
+    pub mpi2sel: Mpisel,
+    pub ticksel: Ticksel,
+    pub lpsel: Lpsel,
+}
+
+impl Default for ClockMux {
+    fn default() -> Self {
+        Self {
+            rtcsel: Rtcsel::Lrc10,
+            wdtsel: Wdtsel::Lrc32,
+            usbsel: Usbsel::Sysclk,
+            perisel: Perisel::Hxt48,
+            mpi1sel: Mpisel::Peri,
+            mpi2sel: Mpisel::Dll2,
+            ticksel: Ticksel::ClkRtc,
+            lpsel: Lpsel::SelSys,
+        }
+    }
 }
 
 /// hclk_hpsys = clk_hpsys / HDIV
@@ -155,46 +175,11 @@ impl ops::Div<HclkPrescaler> for Hertz {
     }
 }
 
-/// PDIV, 3bit
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum PclkPrescaler {
-    DIV1 = 0,
-    DIV2 = 1,
-    DIV4 = 2,
-    DIV8 = 3,
-    DIV16 = 4,
-    DIV32 = 5,
-    DIV64 = 6,
-    DIV128 = 7,
-}
-
 impl ops::Div<PclkPrescaler> for Hertz {
     type Output = Hertz;
     fn div(self, rhs: PclkPrescaler) -> Self::Output {
         Hertz(self.0 >> (rhs as u32))
     }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DllStage {
-    MUL1 = 0,
-    MUL2 = 1,
-    MUL3 = 2,
-    MUL4 = 3,
-    MUL5 = 4,
-    MUL6 = 5,
-    MUL7 = 6,
-    MUL8 = 7,
-    MUL9 = 8,
-    MUL10 = 9,
-    MUL11 = 10,
-    MUL12 = 11,
-    MUL13 = 12,
-    MUL14 = 13,
-    MUL15 = 14,
-    MUL16 = 15,
 }
 
 impl ops::Mul<DllStage> for Hertz {
@@ -216,7 +201,7 @@ impl Default for Dll {
     fn default() -> Self {
         Self {
             out_div2: false,
-            stg: DllStage::MUL1,
+            stg: DllStage::Mul1,
         }
     }
 }
@@ -257,17 +242,17 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            sys: Sysclk::DLL1,
             hdiv: HclkPrescaler(1),
-            pdiv1: PclkPrescaler::DIV2,
-            pdiv2: PclkPrescaler::DIV64,
+            pdiv1: PclkPrescaler::Div2,
+            pdiv2: PclkPrescaler::Div64,
+            sys: Sysclk::Dll1,
             dll1: Some(Dll {
                 out_div2: false,
-                stg: DllStage::MUL10,
+                stg: DllStage::Mul10,
             }),
             dll2: Some(Dll {
                 out_div2: false,
-                stg: DllStage::MUL12,
+                stg: DllStage::Mul12,
             }),
             hrc48_calibrate: true, // Calibrate HRC48 by default for better accuracy
             mux: ClockMux::default(),
@@ -288,36 +273,31 @@ impl Config {
     pub fn validate(&self) -> Result<(), &'static str> {
         // Check sysclk source consistency
         match self.sys {
-            Sysclk::DLL1 => {
+            Sysclk::Dll1 => {
                 if self.dll1.is_none() {
                     return Err("sysclk is set to DLL1, but dll1 is None");
                 }
             }
-            Sysclk::HRC48 => {
+            Sysclk::Hrc48 => {
                 // HRC48 doesn't need any DLL
             }
-            Sysclk::HXT48 => {
+            Sysclk::Hxt48 => {
                 // HXT48 doesn't need any DLL
             }
-            Sysclk::DBL96 => {
+            Sysclk::Dbl96 => {
                 return Err("DBL96 is not implemented yet");
-            }
-            Sysclk::WDT => {
-                return Err("WDT as sysclk is not supported");
             }
         }
 
         // Check MPI (Flash/PSRAM) clock source consistency
-        if self.mux.mpi1sel == crate::rcc::mux::MpiSel::DLL2
-            || self.mux.mpi2sel == crate::rcc::mux::MpiSel::DLL2
-        {
+        if self.mux.mpi1sel == Mpisel::Dll2 || self.mux.mpi2sel == Mpisel::Dll2 {
             if self.dll2.is_none() {
                 return Err("MPI clock source is set to DLL2, but dll2 is None");
             }
         }
 
         // Check USB clock source consistency
-        if self.mux.usbsel == crate::rcc::mux::Usbsel::DLL2 {
+        if self.mux.usbsel == Usbsel::Dll2 {
             if self.dll2.is_none() {
                 return Err("USB clock source is set to DLL2, but dll2 is None");
             }
@@ -326,8 +306,8 @@ impl Config {
         // Check USB clock can be divided to 60MHz
         const USB_TARGET_FREQ: u32 = 60_000_000;
         let usb_source_freq = match self.mux.usbsel {
-            crate::rcc::mux::Usbsel::SYSCLK => self.get_sysclk_freq().0,
-            crate::rcc::mux::Usbsel::DLL2 => {
+            Usbsel::Sysclk => self.get_sysclk_freq().0,
+            Usbsel::Dll2 => {
                 if let Some(dll2) = self.dll2 {
                     (DLL_STG_STEP * dll2.stg).0
                 } else {
@@ -350,7 +330,7 @@ impl Config {
         if sysclk_freq > DLL_MAX_FREQ {
             return Err("sysclk frequency exceeds maximum limit (384 MHz)");
         }
-        if sysclk_freq < DLL_MIN_FREQ && matches!(self.sys, Sysclk::DLL1) {
+        if sysclk_freq < DLL_MIN_FREQ && matches!(self.sys, Sysclk::Dll1) {
             return Err("DLL1 frequency below minimum limit (24 MHz)");
         }
 
@@ -389,12 +369,16 @@ impl Config {
 
     fn get_sysclk_freq(&self) -> Hertz {
         match self.sys {
-            Sysclk::HRC48 => CLK_HRC48_FREQ,
-            Sysclk::HXT48 => CLK_HXT48_FREQ,
-            Sysclk::DLL1 => {
+            Sysclk::Hrc48 => CLK_HRC48_FREQ,
+            Sysclk::Hxt48 => CLK_HXT48_FREQ,
+            Sysclk::Dll1 => {
                 if let Some(dll1) = self.dll1 {
                     let out = DLL_STG_STEP * dll1.stg;
-                    if dll1.out_div2 { out / 2_u32 } else { out }
+                    if dll1.out_div2 {
+                        out / 2_u32
+                    } else {
+                        out
+                    }
                 } else {
                     // If DLL1 is not configured, read from hardware
                     // crate::rcc::get_clk_dll1_freq().unwrap_or(CLK_HXT48_FREQ)
@@ -461,7 +445,7 @@ pub(crate) unsafe fn init(config: Config) {
     //}
 
     // not switch back to XT48 if other clock source has been selected already
-    if HPSYS_RCC.csr().read().sel_sys() == SelSys::Hxt48 {
+    if HPSYS_RCC.csr().read().sel_sys() == Sysclk::Hxt48 {
         // HAL_HPAON_EnableXT48
         HPSYS_AON.acr().modify(|w| w.set_hxt48_req(true));
         while HPSYS_AON.acr().read().hxt48_rdy() != true {
@@ -469,7 +453,7 @@ pub(crate) unsafe fn init(config: Config) {
         }
     }
 
-    HPSYS_RCC.csr().modify(|w| w.set_sel_peri(SelPeri::Hxt48));
+    HPSYS_RCC.csr().modify(|w| w.set_sel_peri(Perisel::Hxt48));
 
     const PM_STANDBY_BOOT: u8 = 3;
 
@@ -485,7 +469,7 @@ pub(crate) unsafe fn init(config: Config) {
         PMUC.lrc32_cr().modify(|w| w.set_en(true));
 
         // HAL_PMU_LpCLockSelect(PMU_LPCLK_RC32);
-        PMUC.cr().modify(|w| w.set_sel_lpclk(true));
+        PMUC.cr().modify(|w| w.set_sel_lpclk(Wdtsel::Lrc32));
 
         // HAL_PMU_EnableDLL(1);
         PMUC.hxt_cr1().modify(|w| w.set_buf_dll_en(true));
@@ -498,10 +482,10 @@ pub(crate) unsafe fn init(config: Config) {
         if config.hrc48_calibrate {
             // Ensure we're not running on HRC48
             let current_sysclk = HPSYS_RCC.csr().read().sel_sys();
-            if current_sysclk == SelSys::Hrc48 {
+            if current_sysclk == Sysclk::Hrc48 {
                 // Must switch away from HRC48 before calibration
                 if HPSYS_AON.acr().read().hxt48_rdy() {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(SelSys::Hxt48));
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hxt48));
                 } else {
                     // Cannot calibrate without a stable reference clock
                     panic!(
@@ -518,8 +502,8 @@ pub(crate) unsafe fn init(config: Config) {
 
         HPSYS_RCC.cfgr().modify(|w| {
             w.set_hdiv(config.hdiv.0);
-            w.set_pdiv1(config.pdiv1 as u8);
-            w.set_pdiv2(config.pdiv2 as u8);
+            w.set_pdiv1(config.pdiv1);
+            w.set_pdiv2(config.pdiv2);
         });
 
         let sysclk = config.get_sysclk_freq();
@@ -528,11 +512,11 @@ pub(crate) unsafe fn init(config: Config) {
 
         crate::pmu::dvfs::config_hcpu_dvfs(current_hclk, hclk, || {
             // Safe Clock Switching: If current sysclk is DLL1, switch to HXT/HRC first
-            if HPSYS_RCC.csr().read().sel_sys() == SelSys::Dll1 {
+            if HPSYS_RCC.csr().read().sel_sys() == Sysclk::Dll1 {
                 if HPSYS_AON.acr().read().hxt48_rdy() {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(SelSys::Hxt48));
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hxt48));
                 } else {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(SelSys::Hrc48));
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hrc48));
                 }
             }
 
@@ -541,7 +525,7 @@ pub(crate) unsafe fn init(config: Config) {
                 if !HPSYS_CFG.cau2_cr().read().hpbg_en() {
                     HPSYS_CFG.cau2_cr().modify(|w| w.set_hpbg_en(true));
                 }
-                if !HPSYS_CFG.cau2_cr().read().hpbg_vddpsw_en()  {
+                if !HPSYS_CFG.cau2_cr().read().hpbg_vddpsw_en() {
                     HPSYS_CFG.cau2_cr().modify(|w| w.set_hpbg_vddpsw_en(true));
                 }
 
@@ -551,7 +535,7 @@ pub(crate) unsafe fn init(config: Config) {
                 HPSYS_RCC.dllcr(0).modify(|w| {
                     w.set_in_div2_en(true); // always true
                     w.set_out_div2_en(dll1.out_div2);
-                    w.set_stg(dll1.stg as u8);
+                    w.set_stg(dll1.stg);
                     w.set_en(true);
                 });
 
@@ -565,14 +549,14 @@ pub(crate) unsafe fn init(config: Config) {
 
             // HAL_RCC_HCPU_ClockSelect(RCC_CLK_MOD_SYS, RCC_SYSCLK_DLL1);
             match config.sys {
-                Sysclk::HRC48 => {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(SelSys::Hrc48));
+                Sysclk::Hrc48 => {
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hrc48));
                 }
-                Sysclk::HXT48 => {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(SelSys::Hxt48));
+                Sysclk::Hxt48 => {
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hxt48));
                 }
-                Sysclk::DLL1 => {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(SelSys::Dll1));
+                Sysclk::Dll1 => {
+                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Dll1));
                 }
                 _ => unimplemented!(),
             }
@@ -581,7 +565,7 @@ pub(crate) unsafe fn init(config: Config) {
         if let Some(ref dll2) = config.dll2 {
             let current_dll2 = HPSYS_RCC.dllcr(1).read();
             let need_reconfig = !current_dll2.en()
-                || current_dll2.stg() != dll2.stg as u8
+                || current_dll2.stg() != dll2.stg
                 || current_dll2.out_div2_en() != dll2.out_div2;
 
             if need_reconfig {
@@ -592,8 +576,8 @@ pub(crate) unsafe fn init(config: Config) {
 
                 // Temporarily switch to clk_peri_hpsys
                 HPSYS_RCC.csr().modify(|w| {
-                    w.set_sel_mpi1(crate::rcc::mux::MpiSel::PERI as u8);
-                    w.set_sel_mpi2(crate::rcc::mux::MpiSel::PERI as u8);
+                    w.set_sel_mpi1(Mpisel::Peri);
+                    w.set_sel_mpi2(Mpisel::Peri);
                 });
 
                 // Step 2: Now safe to reconfigure DLL2
@@ -609,7 +593,7 @@ pub(crate) unsafe fn init(config: Config) {
                 HPSYS_RCC.dllcr(1).modify(|w| {
                     w.set_in_div2_en(true); // always true
                     w.set_out_div2_en(dll2.out_div2);
-                    w.set_stg(dll2.stg as u8);
+                    w.set_stg(dll2.stg);
                     w.set_en(true);
                 });
 
@@ -623,11 +607,11 @@ pub(crate) unsafe fn init(config: Config) {
                 // Step 3: Restore MPI clock sources (if they were using DLL2, switch them back)
                 // Only restore if the old source was DLL2, otherwise keep clk_peri_hpsys for safety
                 HPSYS_RCC.csr().modify(|w| {
-                    if old_mpi1_sel == crate::rcc::mux::MpiSel::DLL2 as u8 {
-                        w.set_sel_mpi1(crate::rcc::mux::MpiSel::DLL2 as u8);
+                    if old_mpi1_sel == Mpisel::Dll2 {
+                        w.set_sel_mpi1(Mpisel::Dll2);
                     }
-                    if old_mpi2_sel == crate::rcc::mux::MpiSel::DLL2 as u8 {
-                        w.set_sel_mpi2(crate::rcc::mux::MpiSel::DLL2 as u8);
+                    if old_mpi2_sel == Mpisel::Dll2 {
+                        w.set_sel_mpi2(Mpisel::Dll2);
                     }
                 });
             }
@@ -639,8 +623,8 @@ pub(crate) unsafe fn init(config: Config) {
         // USB PHY requires exactly 60MHz
         const USB_TARGET_FREQ: u32 = 60_000_000;
         let usb_source_freq = match config.mux.usbsel {
-            crate::rcc::mux::Usbsel::SYSCLK => config.get_sysclk_freq(),
-            crate::rcc::mux::Usbsel::DLL2 => {
+            Usbsel::Sysclk => config.get_sysclk_freq(),
+            Usbsel::Dll2 => {
                 if let Some(dll2) = config.dll2 {
                     DLL_STG_STEP * dll2.stg
                 } else {
@@ -653,48 +637,31 @@ pub(crate) unsafe fn init(config: Config) {
         let usb_div = (usb_source_freq.0 / USB_TARGET_FREQ).saturating_sub(1) as u8;
         HPSYS_RCC.usbcr().modify(|w| w.set_div(usb_div));
         HPSYS_RCC.csr().modify(|w| {
-            w.set_sel_usbc(match config.mux.usbsel {
-                crate::rcc::mux::Usbsel::SYSCLK => crate::pac::hpsys_rcc::vals::SelUsbc::ClkSys,
-                crate::rcc::mux::Usbsel::DLL2 => crate::pac::hpsys_rcc::vals::SelUsbc::Dll2,
-            });
+            w.set_sel_usbc(config.mux.usbsel);
         });
 
         // Configure peripheral clock according to config.mux.perisel
         HPSYS_RCC.csr().modify(|w| {
-            w.set_sel_peri(match config.mux.perisel {
-                crate::rcc::mux::PeriSel::HRC48 => SelPeri::Hrc48,
-                crate::rcc::mux::PeriSel::HXT48 => SelPeri::Hxt48,
-            });
+            w.set_sel_peri(config.mux.perisel);
         });
 
         // Configure low-power clock (for WDT) according to config.mux.wdtsel
         // PMUC.CR.SEL_LPCLK controls the LP clock source for WDT
         PMUC.cr().modify(|w| {
-            w.set_sel_lpclk(match config.mux.wdtsel {
-                crate::rcc::mux::Wdtsel::LRC10 => false, // 0: LRC10K
-                crate::rcc::mux::Wdtsel::LRC32 => true,  // 1: LRC32K
-            });
+            w.set_sel_lpclk(config.mux.wdtsel);
         });
 
         // Configure RTC clock (for RTC, LPTIM1/2, BT sleep) according to config.mux.rtcsel
         // RTC.CR.LPCKSEL controls the clock source for RTC and low-power timers
-        // TODO: Implement RTC clock selection when RTC peripheral is added to PAC
+        // TODO: Uncomment when RTC peripheral is added to PAC
         // crate::pac::RTC.cr().modify(|w| {
-        //     w.set_lpcksel(match config.mux.rtcsel {
-        //         crate::rcc::mux::Rtcsel::LRC10 => false,  // 0: LRC10K
-        //         crate::rcc::mux::Rtcsel::LXT32 => true,   // 1: LXT32K
-        //     });
+        //     w.set_lpcksel(config.mux.rtcsel);
         // });
 
         // Configure system tick clock according to config.mux.ticksel
-        HPSYS_RCC.csr().modify(|w| {
-            w.set_sel_tick(match config.mux.ticksel {
-                crate::rcc::mux::Ticksel::RTC => SelTick::ClkRtc,
-                crate::rcc::mux::Ticksel::_RESERVED_1 => SelTick::_RESERVED_1,
-                crate::rcc::mux::Ticksel::HRC48 => SelTick::Hrc48,
-                crate::rcc::mux::Ticksel::HXT48 => SelTick::Hxt48,
-            })
-        });
+        HPSYS_RCC
+            .csr()
+            .modify(|w| w.set_sel_tick(config.mux.ticksel));
 
         // Store the final clock frequencies for later access via clocks()
         let final_clocks = Clocks {
@@ -705,17 +672,19 @@ pub(crate) unsafe fn init(config: Config) {
             dll1: config.dll1.map(|dll1| DLL_STG_STEP * dll1.stg).into(),
             dll2: config.dll2.map(|dll2| DLL_STG_STEP * dll2.stg).into(),
             clk_peri: (match config.mux.perisel {
-                crate::rcc::mux::PeriSel::HRC48 => CLK_HRC48_FREQ,
-                crate::rcc::mux::PeriSel::HXT48 => CLK_HXT48_FREQ,
-            }).into(),
+                Perisel::Hrc48 => CLK_HRC48_FREQ,
+                Perisel::Hxt48 => CLK_HXT48_FREQ,
+            })
+            .into(),
             clk_peri_div2: (match config.mux.perisel {
-                crate::rcc::mux::PeriSel::HRC48 => CLK_HRC48_FREQ / 2u32,
-                crate::rcc::mux::PeriSel::HXT48 => CLK_HXT48_FREQ / 2u32,
-            }).into(),
+                Perisel::Hrc48 => CLK_HRC48_FREQ / 2u32,
+                Perisel::Hxt48 => CLK_HXT48_FREQ / 2u32,
+            })
+            .into(),
             clk_usb: {
                 let usb_source_freq = match config.mux.usbsel {
-                    crate::rcc::mux::Usbsel::SYSCLK => config.get_sysclk_freq(),
-                    crate::rcc::mux::Usbsel::DLL2 => {
+                    Usbsel::Sysclk => config.get_sysclk_freq(),
+                    Usbsel::Dll2 => {
                         if let Some(dll2) = config.dll2 {
                             DLL_STG_STEP * dll2.stg
                         } else {
@@ -727,53 +696,67 @@ pub(crate) unsafe fn init(config: Config) {
                 Some(usb_source_freq / (usb_div as u32 + 1)).into()
             },
             clk_wdt: Some(match config.mux.wdtsel {
-                crate::rcc::mux::Wdtsel::LRC10 => CLK_LRC10_FREQ,
-                crate::rcc::mux::Wdtsel::LRC32 => CLK_LRC32_FREQ,
-            }).into(),
+                Wdtsel::Lrc10 => CLK_LRC10_FREQ,
+                Wdtsel::Lrc32 => CLK_LRC32_FREQ,
+            })
+            .into(),
             clk_rtc: Some(match config.mux.rtcsel {
-                crate::rcc::mux::Rtcsel::LRC10 => CLK_LRC10_FREQ,
-                crate::rcc::mux::Rtcsel::LXT32 => CLK_LXT32_FREQ,
-            }).into(),
+                Rtcsel::Lrc10 => CLK_LRC10_FREQ,
+                Rtcsel::Lxt32 => CLK_LXT32_FREQ,
+            })
+            .into(),
             clk_mpi1: Some({
                 let mpi_source = match config.mux.mpi1sel {
-                    crate::rcc::mux::MpiSel::PERI => match config.mux.perisel {
-                        crate::rcc::mux::PeriSel::HRC48 => CLK_HRC48_FREQ,
-                        crate::rcc::mux::PeriSel::HXT48 => CLK_HXT48_FREQ,
+                    Mpisel::Peri => match config.mux.perisel {
+                        Perisel::Hrc48 => CLK_HRC48_FREQ,
+                        Perisel::Hxt48 => CLK_HXT48_FREQ,
                     },
-                    crate::rcc::mux::MpiSel::DLL2 => {
+                    Mpisel::Dll2 => {
                         if let Some(dll2) = config.dll2 {
                             DLL_STG_STEP * dll2.stg
                         } else {
                             CLK_HXT48_FREQ // Fallback
                         }
-                    },
-                    crate::rcc::mux::MpiSel::DLL3 => {
-                        // DLL3 not supported on SF32LB52X
-                        CLK_HXT48_FREQ
-                    },
+                    }
+                    Mpisel::Dll1 => {
+                        // DLL1 selected
+                        if let Some(dll1) = config.dll1 {
+                            DLL_STG_STEP * dll1.stg
+                        } else {
+                            CLK_HXT48_FREQ // Fallback
+                        }
+                    }
+                    _ => CLK_HXT48_FREQ, // Reserved values, fallback
                 };
                 mpi_source
-            }).into(),
+            })
+            .into(),
             clk_mpi2: Some({
                 let mpi_source = match config.mux.mpi2sel {
-                    crate::rcc::mux::MpiSel::PERI => match config.mux.perisel {
-                        crate::rcc::mux::PeriSel::HRC48 => CLK_HRC48_FREQ,
-                        crate::rcc::mux::PeriSel::HXT48 => CLK_HXT48_FREQ,
+                    Mpisel::Peri => match config.mux.perisel {
+                        Perisel::Hrc48 => CLK_HRC48_FREQ,
+                        Perisel::Hxt48 => CLK_HXT48_FREQ,
                     },
-                    crate::rcc::mux::MpiSel::DLL2 => {
+                    Mpisel::Dll2 => {
                         if let Some(dll2) = config.dll2 {
                             DLL_STG_STEP * dll2.stg
                         } else {
                             CLK_HXT48_FREQ // Fallback
                         }
-                    },
-                    crate::rcc::mux::MpiSel::DLL3 => {
-                        // DLL3 not supported on SF32LB52X
-                        CLK_HXT48_FREQ
-                    },
+                    }
+                    Mpisel::Dll1 => {
+                        // DLL1 selected
+                        if let Some(dll1) = config.dll1 {
+                            DLL_STG_STEP * dll1.stg
+                        } else {
+                            CLK_HXT48_FREQ // Fallback
+                        }
+                    }
+                    _ => CLK_HXT48_FREQ, // Reserved values, fallback
                 };
                 mpi_source
-            }).into(),
+            })
+            .into(),
             // Audio PLL is managed by AUDCODEC driver, default to None here
             clk_aud_pll: None.into(),
             clk_aud_pll_div16: None.into(),
@@ -837,10 +820,10 @@ pub unsafe fn calibrate_hrc48() -> Result<(), &'static str> {
 
         // Adjust trim value based on results
         if hxt_cnt > hrc_cnt {
-            ct_val = ct_val.wrapping_sub(step_unit);
+            ct_val = ct_val.wrapping_add(step_unit);
             cnt_diff = hxt_cnt - hrc_cnt;
         } else {
-            ct_val = ct_val.wrapping_add(step_unit);
+            ct_val = ct_val.wrapping_sub(step_unit);
             cnt_diff = hrc_cnt - hxt_cnt;
         }
 

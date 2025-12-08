@@ -2,7 +2,9 @@ use critical_section::CriticalSection;
 
 mod clock;
 pub use clock::*;
-pub mod mux;
+
+// Re-export PAC RCC enums
+pub use crate::pac::hpsys_rcc::vals;
 
 use crate::time::Hertz;
 

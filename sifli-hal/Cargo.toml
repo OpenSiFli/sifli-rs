@@ -12,8 +12,9 @@ readme = "README.md"
 license = "Apache-2.0"
 
 [dependencies]
-# sifli-pac = { version = "0.1.0", path = "../../sifli-pac" }
-sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
+# sifli-pac = { version = "0.2.0", path = "../../sifli-pac" }
+sifli-pac = { version = "0.2.0", git = "https://github.com/Ic-arbon/sifli-pac.git", branch = "test/rcc-enums" }
+# sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
 
 embassy-sync = { version = "0.7" }
 embassy-time-driver = { version = "0.2", optional = true }
@@ -22,7 +23,10 @@ embassy-time = { version = "0.5.0", optional = true }
 embassy-futures = { version = "0.1" }
 embassy-embedded-hal = { version = "0.5" }
 # prio-bits-3: sf32lb52, 55, 56, 58
-embassy-hal-internal = { version = "0.2.0", features = ["cortex-m", "prio-bits-3"] }
+embassy-hal-internal = { version = "0.2.0", features = [
+    "cortex-m",
+    "prio-bits-3",
+] }
 embassy-usb-driver = { version = "0.2" }
 
 defmt = { version = "1", optional = true }
@@ -31,13 +35,18 @@ critical-section = "1.2.0"
 cfg-if = { version = "1", features = ["core"] }
 futures-util = { version = "0.3.31", default-features = false }
 nb = "1.1.0"
-musb ={ version =  "0.3.0", features = ["embassy-usb-driver-impl", "prebuild"], optional = true }
+musb = { version = "0.3.0", features = [
+    "embassy-usb-driver-impl",
+    "prebuild",
+], optional = true }
 
 # TODO: multicore critical-section impl
 cortex-m = { version = "0.7.7" }
 cortex-m-rt = "0.7"
 
-embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = ["unproven"] }
+embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = [
+    "unproven",
+] }
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 embedded-hal-nb = { version = "1.0" }
@@ -65,7 +74,8 @@ time = ["embassy-time"]
 
 set-msplim = []
 
-defmt = ["dep:defmt", 
+defmt = [
+    "dep:defmt",
     "sifli-pac/defmt",
     "embassy-hal-internal/defmt",
     "musb?/defmt",
