@@ -13,8 +13,7 @@ license = "Apache-2.0"
 
 [dependencies]
 # sifli-pac = { version = "0.2.0", path = "../../sifli-pac" }
-sifli-pac = { version = "0.2.0", git = "https://github.com/Ic-arbon/sifli-pac.git", branch = "feat/lcpu-pwron" }
-# sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
+sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
 
 embassy-sync = { version = "0.7" }
 embassy-time-driver = { version = "0.2", optional = true }

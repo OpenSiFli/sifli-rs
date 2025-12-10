@@ -6,11 +6,11 @@
             "request": "attach",
             "name": "probe_rs attach sf32lb52",
             "chip": "SF32LB52",
-            "probe": "1a86:55d3:<Your_Port>",
+            "probe": "1a86:55d3:/dev/cu.wchusbserial5ABA0718641",
             "coreConfigs": [
                 {
                     "coreIndex": 0,
-                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabihf/debug/blinky",
+                    "programBinary": "examples/sf32lb52x/target/thumbv8m.main-none-eabihf/debug/lcpu_pwron",
                     "rttEnabled": true,
                     "rttChannelFormats": [
                       {
