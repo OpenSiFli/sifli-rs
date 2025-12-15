@@ -2,6 +2,10 @@
 MEMORY
 {
   FLASH : ORIGIN = 0x12020000, LENGTH = 16M - 128K
-  RAM : ORIGIN = 0x20000000, LENGTH = 512K
+  # 注意：SF32LB52x 的 HPSYS RAM 末尾 1KB 被 SDK 固定用于核间 mailbox IPC buffer：
+  # - 0x2007FC00..0x2007FDFF (CH2, 512B)
+  # - 0x2007FE00..0x2007FFFF (CH1, 512B)
+  # 若不从链接脚本里预留，栈/全局变量可能覆盖该区域，导致 IPC ring buffer 随机损坏。
+  RAM : ORIGIN = 0x20000000, LENGTH = 512K - 1K
   PSRAM : ORIGIN = 0x60000000, LENGTH = 8M
 }

@@ -88,6 +88,8 @@ pub mod config {
 }
 pub use config::Config;
 
+mod mpu;
+
 /// Initialize the `sifli-hal` with the provided configuration.
 ///
 /// This returns the peripheral singletons that can be used for creating drivers.
@@ -123,6 +125,12 @@ fn system_init() {
         cp.SCB.cpacr.modify(|r| {
             r | (0b111111)
         });
+
+        // 与 SDK `mpu_config()` 的思路一致：避免遗留 I-cache 影响后续 MPU/Cache 配置。
+        cp.SCB.invalidate_icache();
+
+        // 配置 MPU，使跨核共享 SRAM 为 non-cacheable（与 SDK 行为一致）。
+        mpu::init();
 
         // Enable Cache
         cp.SCB.enable_icache();
