@@ -108,3 +108,5 @@ hcpu:
     clock: clk_usb
   - name: MAILBOX1
     clock: pclk
+  - name: MAILBOX2
+    enable_reset: false
