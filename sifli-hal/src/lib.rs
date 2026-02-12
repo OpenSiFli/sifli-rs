@@ -20,6 +20,7 @@ pub mod efuse;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
 pub mod adc;
+pub mod mpi;
 pub mod lcdc;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
