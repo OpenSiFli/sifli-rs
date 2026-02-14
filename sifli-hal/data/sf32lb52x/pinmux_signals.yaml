@@ -35,7 +35,13 @@ hcpu:
       - ATIM
       - GPTIM
       - LPTIM
-  
+
+  # GPTIM pin signals (auto-generated)
+  - name: GPTIM
+    type: peripheral_mux
+    pin_trait:
+      crate::timer::TimerPin<$peripheral, crate::timer::$cfg_pin>
+
   # Muxed Peripheral: USART
   # Uses register lookup to determine the specific pin trait (e.g., TxdPin, RxdPin).
   - name: USART

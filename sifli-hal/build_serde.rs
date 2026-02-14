@@ -80,11 +80,15 @@ pub struct AdcPeripheral {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Dma {
-    pub hcpu: DmaHcpu,
+    /// HCPU DMA controllers (required, e.g., DMAC1)
+    pub hcpu: DmaControllers,
+    /// LCPU DMA controllers (optional, e.g., DMAC2)
+    #[serde(default)]
+    pub lcpu: Option<DmaControllers>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DmaHcpu {
+pub struct DmaControllers {
     #[serde(flatten)]
     pub controllers: BTreeMap<String, DmaController>,
 }
@@ -102,6 +106,16 @@ pub struct DmaRequest {
     pub module: Option<String>,
     #[serde(default = "default_true")]
     pub used: bool,
+}
+
+// ---------- mailbox.yaml ----------
+
+/// Mailbox configuration: maps peripheral name (e.g., "MAILBOX1") to its config.
+pub type Mailbox = BTreeMap<String, MailboxConfig>;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MailboxConfig {
+    pub channel_total: u8,
 }
 
 // ---------- HPSYS_xxx.yaml ----------
@@ -195,7 +209,10 @@ pub struct Interrupt {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Peripherals {
+    #[serde(default)]
     pub hcpu: Vec<Peripheral>,
+    #[serde(default)]
+    pub lcpu: Vec<Peripheral>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

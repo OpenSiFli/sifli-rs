@@ -12,7 +12,6 @@ use defmt_rtt as _;
 use panic_probe as _;
 use embassy_executor::Spawner;
 
-use sifli_hal;
 use sifli_hal::gpio::{Input, Level, Output, Pull};
 
 #[embassy_executor::main]

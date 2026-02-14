@@ -13,7 +13,8 @@ license = "Apache-2.0"
 
 [dependencies]
 # sifli-pac = { version = "0.2.0", path = "../../sifli-pac" }
-sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
+sifli-pac = { version = "0.2.0", git = "https://github.com/Ic-arbon/sifli-pac.git", rev = "d439394" }
+# sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac" }
 
 embassy-sync = { version = "0.7" }
 embassy-time-driver = { version = "0.2", optional = true }
@@ -22,7 +23,10 @@ embassy-time = { version = "0.5.0", optional = true }
 embassy-futures = { version = "0.1" }
 embassy-embedded-hal = { version = "0.5" }
 # prio-bits-3: sf32lb52, 55, 56, 58
-embassy-hal-internal = { version = "0.2.0", features = ["cortex-m", "prio-bits-3"] }
+embassy-hal-internal = { version = "0.2.0", features = [
+    "cortex-m",
+    "prio-bits-3",
+] }
 embassy-usb-driver = { version = "0.2" }
 
 defmt = { version = "1", optional = true }
@@ -31,24 +35,32 @@ critical-section = "1.2.0"
 cfg-if = { version = "1", features = ["core"] }
 futures-util = { version = "0.3.31", default-features = false }
 nb = "1.1.0"
-musb ={ version =  "0.3.0", features = ["embassy-usb-driver-impl", "prebuild"], optional = true }
+musb = { version = "0.3.0", features = [
+    "embassy-usb-driver-impl",
+    "prebuild",
+], optional = true }
 
 # TODO: multicore critical-section impl
 cortex-m = { version = "0.7.7" }
 cortex-m-rt = "0.7"
 
-embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = ["unproven"] }
+embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = [
+    "unproven",
+] }
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 embedded-hal-nb = { version = "1.0" }
 
-embedded-io = { version = "0.6.1" }
-embedded-io-async = { version = "0.6.1" }
+embedded-io = { version = "0.7" }
+embedded-io-async = { version = "0.7" }
 embedded-storage = { version = "0.3" }
 embedded-storage-async = { version = "0.4.1" }
 portable-atomic = { version = "1.11.1", features = ["require-cas"] }
 display-driver = { version = "0.1.0" }
 bitfield-struct = "0.12.1"
+
+bt-hci = { version = "0.8", optional = true }
+rand_core = { version = "0.6" }
 
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -75,7 +87,8 @@ time = ["embassy-time"]
 
 set-msplim = []
 
-defmt = ["dep:defmt", 
+defmt = [
+    "dep:defmt",
     "sifli-pac/defmt",
     "embassy-hal-internal/defmt",
     "musb?/defmt",
@@ -92,6 +105,14 @@ usb = ["musb"]
 unstable-pac = []
 
 sf32lb52x = ["sifli-pac/sf32lb52x", "musb?/builtin-sf32lb52x"]
+sf32lb52x-lcpu = ["sf32lb52x", "bt-hci"]
+
+## Enable EDR LO 3GHz calibration (VCO3G + OSLO). Only needed for BR/EDR (classic Bluetooth).
+## BLE-only applications can skip this for faster boot.
+edr-cal = ["sf32lb52x-lcpu"]
+
+## Enable bt-hci transport layer for IPC HCI communication
+bt-hci = ["dep:bt-hci", "sf32lb52x"]
 
 time-driver-atim1 = ["_time-driver-atim"]
 time-driver-gptim1 = ["_time-driver-gptim"]
@@ -107,3 +128,14 @@ unchecked-overclocking = []
 
 [package.metadata.docs.rs]
 default-target = "thumbv8m.main-none-eabihf"
+
+# Patch embassy crates to use embedded-io 0.7 compatible versions
+[patch.crates-io]
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-time-queue-utils = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }

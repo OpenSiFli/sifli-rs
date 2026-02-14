@@ -5,7 +5,15 @@ edition = "2021"
 publish = false
 
 [dependencies]
-sifli-hal = { version = "0.1.1", path = "../../sifli-hal", features = ["sf32lb52x", "defmt", "unstable-pac", "usb", "time-driver-gptim2"] }
+sifli-hal = { version = "0.1.1", path = "../../sifli-hal", features = [
+  "sf32lb52x",
+  "sf32lb52x-lcpu",
+  "defmt",
+  "unstable-pac",
+  "usb",
+  "time-driver-gptim2",
+  "bt-hci",
+] }
 
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7.3", features = ["set-sp", "set-vtor"] }
@@ -14,24 +22,54 @@ panic-probe = { version = "1", features = ["print-defmt"] }
 # panic-halt = "*"
 
 embassy-sync = { version = "0.7.2", features = ["defmt"] }
-embassy-executor = { version = "0.9", features = ["arch-cortex-m", "executor-thread", "defmt"] }
-embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+embassy-executor = { version = "0.9", features = [
+  "arch-cortex-m",
+  "executor-thread",
+  "defmt",
+] }
+embassy-time = { version = "0.5.0", features = [
+  "defmt",
+  "defmt-timestamp-uptime",
+  "tick-hz-32_768",
+] }
 embassy-futures = "0.1.2"
 
-embedded-io = { version = "0.6.0" }
-embedded-io-async = { version = "0.6.1" }
+embedded-io = { version = "0.7" }
+embedded-io-async = { version = "0.7" }
+embedded-hal-async = { version = "1.0" }
 
 defmt = "1"
 defmt-rtt = "1"
 heapless = "0.9"
 static_cell = "2.1.1"
 portable-atomic = "1.11.1"
+bt-hci = { version = "0.8", features = ["defmt"] }
+trouble-host = { version = "0.6.0", features = [
+  "defmt",
+  "peripheral",
+  "gatt",
+  "derive",
+  "security",
+] }
 
 # USB dependencies
-embassy-usb = { version="0.5", features = ["defmt"] }
-usbd-hid = { version="0.8", features = ["defmt"] }
+embassy-usb = { version = "0.5", features = ["defmt"] }
+usbd-hid = { version = "0.9", features = ["defmt"] }
 
 # Display dependencies
 embedded-graphics = { version = "0.8", features = ["defmt"] }
 display-driver = { version = "0.1.0" }
 display-driver-co5300 = { version = "0.1.1"}
+
+# Patch embassy crates to use embedded-io 0.7 compatible versions
+[patch.crates-io]
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-time-queue-utils = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "dff15aeb5fb5b206684dd673f6c48cd77e2548c7" }
