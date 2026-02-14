@@ -25,7 +25,8 @@ use embassy_usb::driver::EndpointError;
 use embassy_usb::UsbDevice;
 
 use sifli_hal::bind_interrupts;
-use sifli_hal::rcc::{ClkSysSel, ConfigOption, DllConfig, UsbConfig, UsbSel};
+use sifli_hal::rcc::{Dll, DllStage, Sysclk};
+use sifli_hal::rcc::Usbsel;
 use sifli_hal::usb::{Driver, InterruptHandler, Instance};
 
 
@@ -39,13 +40,23 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("Hello World! USB HID TEST");
-    let mut config = sifli_hal::Config::default();
-    // 240MHz Dll1 Freq = (stg + 1) * 24MHz
-    config.rcc.dll1 = ConfigOption::Update(DllConfig { enable: true, stg: 9, div2: false });
-    config.rcc.clk_sys_sel = ConfigOption::Update(ClkSysSel::Dll1);
-    config.rcc.usb = ConfigOption::Update(UsbConfig { sel: UsbSel::ClkSys, div: 4 });
+
+    // Configure 240MHz system clock using DLL1
+    // DLL1 Freq = (stg + 1) * 24MHz = (9 + 1) * 24MHz = 240MHz
+    // DLL2 for USB at 240MHz, USB = 240MHz / 4 = 60MHz (required by USB PHY)
+    let config = sifli_hal::Config::default()
+        .with_rcc(const {
+            sifli_hal::rcc::ConfigBuilder::new()
+                .with_sys(Sysclk::Dll1)
+                .with_dll1(Dll::new().with_stg(DllStage::Mul10))
+                .with_dll2(Dll::new().with_stg(DllStage::Mul10))
+                .with_mux(sifli_hal::rcc::ClockMux::new().with_usbsel(Usbsel::Dll2))
+                .checked()
+        });
+
     let p = sifli_hal::init(config);
 
+    info!("Clock configuration complete");
     sifli_hal::rcc::test_print_clocks();
 
     // Create the driver, from the HAL

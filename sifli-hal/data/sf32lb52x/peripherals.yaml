@@ -90,6 +90,8 @@ hcpu:
   - name: HPSYS_AON
     enable_reset: false
     clock: clk_wdt
+  - name: PATCH
+    enable_reset: false
   - name: LPTIM1
     enable_reset: false
     clock: clk_rtc
@@ -108,3 +110,21 @@ hcpu:
     clock: clk_usb
   - name: MAILBOX1
     clock: pclk
+  - name: MAILBOX2
+    enable_reset: false
+
+# Note: Some LCPU peripherals are not yet defined in PAC (sifli-pac).
+# Missing from PAC: LPSYS_PINMUX, USART4, USART5, LPSYS_SECU, PTC2, BTIM3, BTIM4,
+#                   LPSYS_CFG, LPSYS_GPIO, CRC2
+lcpu:
+  - name: DMAC2
+    clock: lp_hclk
+  - name: BT_RFC
+    rcc_field: RFC
+    clock: lp_hclk
+  - name: BT_PHY
+    rcc_field: PHY
+    clock: lp_hclk
+  - name: BT_MAC
+    rcc_field: MAC
+    clock: lp_mac_clk

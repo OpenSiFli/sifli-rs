@@ -10,6 +10,32 @@ use core::fmt::{Debug, Display, LowerHex};
 #[cfg(all(feature = "defmt", feature = "log"))]
 compile_error!("You may not enable both `defmt` and `log` features.");
 
+/// Const-compatible frequency assertion for compile-time clock validation.
+///
+/// When `unchecked-overclocking` is enabled, these assertions become no-ops,
+/// allowing users to bypass frequency limits at their own risk.
+///
+/// Use this for overclocking-related limits only. Correctness checks
+/// (e.g., DLL not configured) should use `::core::panic!` directly.
+#[collapse_debuginfo(yes)]
+macro_rules! const_rcc_assert {
+    ($cond:expr, $msg:literal) => {
+        {
+            #[cfg(not(feature = "unchecked-overclocking"))]
+            {
+                if !$cond {
+                    ::core::panic!($msg);
+                }
+            }
+            #[cfg(feature = "unchecked-overclocking")]
+            {
+                // Evaluate condition to suppress unused variable warnings
+                _ = $cond;
+            }
+        }
+    };
+}
+
 #[collapse_debuginfo(yes)]
 macro_rules! rcc_assert {
     ($($x:tt)*) => {

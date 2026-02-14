@@ -4,7 +4,7 @@
 // https://github.com/embassy-rs/embassy/tree/main/embassy-stm32
 // Special thanks to the Embassy Project and its contributors for their work!
 
-use core::ops::{Div, Mul};
+use core::ops::{Div, Mul, Add};
 
 /// Hertz
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
@@ -85,10 +85,11 @@ impl Div<u8> for Hertz {
     }
 }
 
-impl Div<Hertz> for Hertz {
-    type Output = u32;
-    fn div(self, rhs: Hertz) -> Self::Output {
-        self.0 / rhs.0
+
+impl Add<Hertz> for Hertz {
+    type Output = Hertz;
+    fn add(self, rhs: Hertz) -> Self::Output {
+        Hertz(self.0 + rhs.0)
     }
 }
 
@@ -103,6 +104,9 @@ impl Div<Hertz> for Hertz {
 pub struct MaybeHertz(u32);
 
 impl MaybeHertz {
+    /// Represents an unknown/unset frequency (equivalent to `None`).
+    pub const NONE: Self = Self(0);
+
     /// Same as calling the `.into()` function, but without type inference.
     pub fn to_hertz(self) -> Option<Hertz> {
         self.into()
@@ -116,6 +120,12 @@ impl From<Option<Hertz>> for MaybeHertz {
             Some(Hertz(val)) => Self(val),
             None => Self(0),
         }
+    }
+}
+
+impl From<Hertz> for MaybeHertz {
+    fn from(value: Hertz) -> Self {
+        Self(value.0)
     }
 }
 

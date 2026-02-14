@@ -21,22 +21,27 @@ hcpu:
         id: 7
       - name: gptim1_update
         id: 8
-        used: false
+        used: true
+        module: timer
       - name: gptim1_trigger
         id: 9
         used: false
       - name: gptim1_cc1
         id: 10
-        used: false
+        used: true
+        module: timer
       - name: gptim1_cc2
         id: 11
-        used: false
+        used: true
+        module: timer
       - name: gptim1_cc3
         id: 12
-        used: false
+        used: true
+        module: timer
       - name: gptim1_cc4
         id: 13
-        used: false
+        used: true
+        module: timer
       - name: btim1
         id: 14
         used: false
@@ -118,13 +123,15 @@ hcpu:
         used: false
       - name: gptim2_update
         id: 43
-        used: false
+        used: true
+        module: timer
       - name: gptim2_trigger
         id: 44
         used: false
       - name: gptim2_cc1
         id: 45
-        used: false
+        used: true
+        module: timer
       - name: audprc_tx_out_ch1
         id: 46
         used: false
@@ -151,13 +158,60 @@ hcpu:
         used: false
       - name: gptim2_cc2
         id: 54
-        used: false
+        used: true
+        module: timer
       - name: gptim2_cc3
         id: 55
-        used: false
+        used: true
+        module: timer
       - name: gptim2_cc4
         id: 56
-        used: false
+        used: true
+        module: timer
       - name: sdmmc1
         id: 57
+        used: false
+
+# LCPU DMA controller
+lcpu:
+  DMAC2:
+    channel_total: 8
+    request:
+      # DMAC2 is primarily used for RF calibration and BT operations
+      # M2M (memory-to-memory) transfers don't need request IDs
+      - name: m2m
+        id: 0
+        used: false
+      - name: usart4_tx
+        id: 1
+        used: false
+      - name: usart4_rx
+        id: 2
+        used: false
+      - name: usart5_tx
+        id: 3
+        used: false
+      - name: usart5_rx
+        id: 4
+        used: false
+      - name: i2c5
+        id: 5
+        used: false
+      - name: i2c6
+        id: 6
+        used: false
+      - name: spi3_tx
+        id: 7
+        used: false
+      - name: spi3_rx
+        id: 8
+        used: false
+      - name: btim3
+        id: 9
+        used: false
+      - name: btim4
+        id: 10
+        used: false
+      - name: ptc2
+        id: 11
         used: false

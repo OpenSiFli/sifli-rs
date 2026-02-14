@@ -252,6 +252,18 @@ pub enum Error {
     BufferTooLong,
 }
 
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Error::Framing => write!(f, "framing error"),
+            Error::Noise => write!(f, "noise error"),
+            Error::Overrun => write!(f, "RX buffer overrun"),
+            Error::Parity => write!(f, "parity check error"),
+            Error::BufferTooLong => write!(f, "buffer too large for DMA"),
+        }
+    }
+}
+
 enum ReadCompletionEvent {
     // DMA Read transfer completed first
     DmaCompleted,
@@ -1647,6 +1659,8 @@ impl<'d, T: Instance, M: Mode> embedded_hal_nb::serial::Write for Uart<'d, T, M>
         self.blocking_flush().map_err(nb::Error::Other)
     }
 }
+
+impl core::error::Error for Error {}
 
 impl embedded_io::Error for Error {
     fn kind(&self) -> embedded_io::ErrorKind {
