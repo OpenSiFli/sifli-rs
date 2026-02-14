@@ -3,9 +3,11 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_time::Delay;
 use sifli_hal::usart::{Config, Uart};
 use defmt_rtt as _;
 use panic_probe as _;
+use embedded_hal_async::delay::DelayNs;
 
 // This example uses the debug UART by default. You can view debug logs  
 // and output via SiFli Trace, but this may interfere with debugging  
@@ -29,8 +31,12 @@ async fn main(_spawner: Spawner) {
     info!("wrote Hello, starting echo(Try write someting at 5 bytes)");
 
     loop {
-        let mut buf = [0u8; 5];
-        unwrap!(usart.blocking_read(&mut buf));
-        unwrap!(usart.blocking_write(&buf));
+        unwrap!(usart.blocking_write(b"Hello SiFli!\n"));
+        unwrap!(usart.blocking_write(b"Hello Embassy!\n"));
+
+    //    let mut buf = [0u8; 5];
+      //  unwrap!(usart.blocking_read(&mut buf));
+       // unwrap!(usart.blocking_write(&buf));
+       Delay.delay_ms(1000).await;
     }
 }

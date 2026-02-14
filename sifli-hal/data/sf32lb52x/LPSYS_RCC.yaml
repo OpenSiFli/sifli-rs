@@ -1,0 +1,378 @@
+block/LPSYS_RCC:
+  items:
+  - name: RSTR1
+    description: Reset Register 1
+    byte_offset: 0
+    fieldset: RSTR1
+  - name: ENR1
+    description: Enable Register 1
+    byte_offset: 4
+    fieldset: ENR1
+  - name: ESR1
+    description: Enable Set Register 1
+    byte_offset: 8
+    fieldset: ESR1
+  - name: ECR1
+    description: Enable Clear Register 1
+    byte_offset: 12
+    fieldset: ECR1
+  - name: CSR
+    description: Clock Select Register
+    byte_offset: 16
+    fieldset: CSR
+  - name: CFGR
+    description: Clock Configuration Register
+    byte_offset: 20
+    fieldset: CFGR
+  - name: DBGR
+    description: Debug Register
+    byte_offset: 24
+    fieldset: DBGR
+
+fieldset/RSTR1:
+  description: Reset Register 1
+  fields:
+  - name: LCPU
+    description: 0 - no reset; 1 - reset
+    bit_offset: 0
+    bit_size: 1
+  - name: DMAC2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 1
+    bit_size: 1
+  - name: MAILBOX2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 2
+    bit_size: 1
+  - name: PINMUX2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 3
+    bit_size: 1
+  - name: PATCH
+    description: 0 - no reset; 1 - reset
+    bit_offset: 4
+    bit_size: 1
+  - name: USART4
+    description: 0 - no reset; 1 - reset
+    bit_offset: 5
+    bit_size: 1
+  - name: USART5
+    description: 0 - no reset; 1 - reset
+    bit_offset: 6
+    bit_size: 1
+  - name: PTC2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 8
+    bit_size: 1
+  - name: BTIM3
+    description: 0 - no reset; 1 - reset
+    bit_offset: 9
+    bit_size: 1
+  - name: BTIM4
+    description: 0 - no reset; 1 - reset
+    bit_offset: 10
+    bit_size: 1
+  - name: SYSCFG2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 15
+    bit_size: 1
+  - name: GPIO2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 16
+    bit_size: 1
+  - name: RFC
+    description: 0 - no reset; 1 - reset
+    bit_offset: 18
+    bit_size: 1
+  - name: PHY
+    description: 0 - no reset; 1 - reset
+    bit_offset: 19
+    bit_size: 1
+  - name: MAC
+    description: 0 - no reset; 1 - reset
+    bit_offset: 20
+    bit_size: 1
+  - name: CRC2
+    description: 0 - no reset; 1 - reset
+    bit_offset: 21
+    bit_size: 1
+
+fieldset/ENR1:
+  description: Enable Register 1
+  fields:
+  - name: DMAC2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 1
+    bit_size: 1
+  - name: MAILBOX2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 2
+    bit_size: 1
+  - name: PINMUX2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 3
+    bit_size: 1
+  - name: PATCH
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 4
+    bit_size: 1
+  - name: USART4
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 5
+    bit_size: 1
+  - name: USART5
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 6
+    bit_size: 1
+  - name: SECU2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 7
+    bit_size: 1
+  - name: PTC2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 8
+    bit_size: 1
+  - name: BTIM3
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 9
+    bit_size: 1
+  - name: BTIM4
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 10
+    bit_size: 1
+  - name: SYSCFG2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 15
+    bit_size: 1
+  - name: GPIO2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 16
+    bit_size: 1
+  - name: RFC
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 18
+    bit_size: 1
+  - name: PHY
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 19
+    bit_size: 1
+  - name: MAC
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 20
+    bit_size: 1
+  - name: CRC2
+    description: 0 - disabled; 1 - enabled
+    bit_offset: 21
+    bit_size: 1
+
+fieldset/ESR1:
+  description: Enable Set Register 1
+  fields:
+  - name: DMAC2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 1
+    bit_size: 1
+  - name: MAILBOX2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 2
+    bit_size: 1
+  - name: PINMUX2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 3
+    bit_size: 1
+  - name: PATCH
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 4
+    bit_size: 1
+  - name: USART4
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 5
+    bit_size: 1
+  - name: USART5
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 6
+    bit_size: 1
+  - name: SECU2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 7
+    bit_size: 1
+  - name: PTC2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 8
+    bit_size: 1
+  - name: BTIM3
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 9
+    bit_size: 1
+  - name: BTIM4
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 10
+    bit_size: 1
+  - name: SYSCFG2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 15
+    bit_size: 1
+  - name: GPIO2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 16
+    bit_size: 1
+  - name: RFC
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 18
+    bit_size: 1
+  - name: PHY
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 19
+    bit_size: 1
+  - name: MAC
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 20
+    bit_size: 1
+  - name: CRC2
+    description: write 1 to set module enable, write 0 has no effect
+    bit_offset: 21
+    bit_size: 1
+
+fieldset/ECR1:
+  description: Enable Clear Register 1
+  fields:
+  - name: DMAC2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 1
+    bit_size: 1
+  - name: MAILBOX2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 2
+    bit_size: 1
+  - name: PINMUX2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 3
+    bit_size: 1
+  - name: PATCH
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 4
+    bit_size: 1
+  - name: USART4
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 5
+    bit_size: 1
+  - name: USART5
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 6
+    bit_size: 1
+  - name: SECU2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 7
+    bit_size: 1
+  - name: PTC2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 8
+    bit_size: 1
+  - name: BTIM3
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 9
+    bit_size: 1
+  - name: BTIM4
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 10
+    bit_size: 1
+  - name: SYSCFG2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 15
+    bit_size: 1
+  - name: GPIO2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 16
+    bit_size: 1
+  - name: RFC
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 18
+    bit_size: 1
+  - name: PHY
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 19
+    bit_size: 1
+  - name: MAC
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 20
+    bit_size: 1
+  - name: CRC2
+    description: write 1 to clear module enable, write 0 has no effect
+    bit_offset: 21
+    bit_size: 1
+
+fieldset/CSR:
+  description: Clock Select Register
+  fields:
+  - name: SEL_SYS
+    description: select clk_lpsys source 0 - clk_hrc48; 1 - clk_hxt48
+    bit_offset: 0
+    bit_size: 1
+  - name: SEL_SYS_LP
+    description: select clk_lpsys source 0 - selected by SEL_SYS; 1 - clk_wdt
+    bit_offset: 2
+    bit_size: 1
+  - name: SEL_PERI
+    description: select clk_peri_lpsys source 0 - clk_hrc48; 1 - clk_hxt48
+    bit_offset: 4
+    bit_size: 1
+  - name: SEL_TICK
+    description: select clock source for systick reference 0 - clk_rtc; 1 - reserved; 2 - clk_hrc48; 3 - clk_hxt48
+    bit_offset: 5
+    bit_size: 2
+
+fieldset/CFGR:
+  description: Clock Configuration Register
+  fields:
+  - name: HDIV1
+    description: hclk_lpsys = clk_lpsys / HDIV if HDIV=0, hclk_lpsys = clk_lpsys
+    bit_offset: 0
+    bit_size: 6
+  - name: PDIV1
+    description: pclk1_lpsys = hclk_lpsys / (2^PDIV1), by default divided by 2
+    bit_offset: 8
+    bit_size: 3
+  - name: PDIV2
+    description: pclk2_lpsys = hclk_lpsys / (2^PDIV2), by default divided by 32
+    bit_offset: 12
+    bit_size: 3
+  - name: MACDIV
+    description: MAC clock divider MACCLK = hclk_lpsys / MACDIV
+    bit_offset: 16
+    bit_size: 4
+  - name: MACFREQ
+    description: clock frequency of MAC clock
+    bit_offset: 20
+    bit_size: 5
+  - name: TICKDIV
+    description: systick reference clock is systick reference clock source (selected by SEL_TICK) divided by TICKDIV
+    bit_offset: 25
+    bit_size: 6
+
+fieldset/DBGR:
+  description: Debug Register
+  fields:
+  - name: SYSCLK_AON
+    description: for debug only
+    bit_offset: 0
+    bit_size: 1
+  - name: SYSCLK_SWLP
+    description: for debug only
+    bit_offset: 1
+    bit_size: 1
+  - name: FORCE_BUS
+    description: for debug only
+    bit_offset: 2
+    bit_size: 1
+  - name: FORCE_MAC
+    description: for debug only
+    bit_offset: 3
+    bit_size: 1
+  - name: FORCE_GPIO
+    description: for debug only
+    bit_offset: 4
+    bit_size: 1
+  - name: SYSCLK_SWBT
+    description: If set to 1, clk_lpsys will switch from clk_hrc48 to clk_hxt48 when MAC active and vice versa
+    bit_offset: 5
+    bit_size: 1

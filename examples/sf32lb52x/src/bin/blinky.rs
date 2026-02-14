@@ -8,7 +8,6 @@ use panic_probe as _;
 use embassy_time::Timer;
 use embassy_executor::Spawner;
 
-use sifli_hal;
 use sifli_hal::gpio;
 
 #[embassy_executor::main]

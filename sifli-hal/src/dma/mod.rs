@@ -17,6 +17,8 @@ pub(crate) mod ringbuffer;
 pub mod word;
 
 pub use crate::_generated::Request;
+pub use crate::_generated::DMAC2_ID_FLAG;
+
 pub(crate) trait SealedChannel {
     fn id(&self) -> u8;
 }
@@ -46,10 +48,35 @@ pub struct AnyChannel {
 }
 impl_peripheral!(AnyChannel);
 
-// TODO: Multi DMAC in future?
 impl AnyChannel {
+    /// Get the DMA controller and channel number for this channel.
     fn info(&self) -> ChannelInfo {
-        ChannelInfo { dma: crate::pac::DMAC1, num: self.id as _ }
+        if self.id & DMAC2_ID_FLAG != 0 {
+            // DMAC2 channel (0x80-0x87 -> channel 0-7)
+            ChannelInfo {
+                dma: crate::pac::DMAC2,
+                num: (self.id & 0x7F) as _,
+            }
+        } else {
+            // DMAC1 channel (0x00-0x07)
+            ChannelInfo {
+                dma: crate::pac::DMAC1,
+                num: self.id as _,
+            }
+        }
+    }
+
+    /// Convert channel ID to STATE array index.
+    ///
+    /// - DMAC1 channels (0x00-0x07) -> indices 0-7
+    /// - DMAC2 channels (0x80-0x87) -> indices 8-15
+    #[inline]
+    pub(crate) fn state_index(&self) -> usize {
+        if self.id & DMAC2_ID_FLAG != 0 {
+            crate::_generated::DMAC1_CHANNEL_COUNT + (self.id & 0x7F) as usize
+        } else {
+            self.id as usize
+        }
     }
 }
 
@@ -85,6 +112,12 @@ macro_rules! dma_channel_impl {
 impl Channel for AnyChannel {}
 
 use crate::_generated::CHANNEL_COUNT;
+
+/// STATE array for all DMA channels.
+///
+/// Index mapping:
+/// - DMAC1 channels (ID 0x00-0x07) -> indices 0-7
+/// - DMAC2 channels (ID 0x80-0x87) -> indices 8-15
 static STATE: [dma::ChannelState; CHANNEL_COUNT] = [dma::ChannelState::NEW; CHANNEL_COUNT];
 
 pub(crate) unsafe fn init(cs: critical_section::CriticalSection) {

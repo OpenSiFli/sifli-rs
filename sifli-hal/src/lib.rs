@@ -13,9 +13,12 @@ mod utils;
 
 pub mod rcc;
 pub mod gpio;
+pub mod i2c;
 pub mod timer;
 pub mod time;
 pub mod pmu;
+pub mod patch;
+pub mod syscfg;
 pub mod efuse;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod usart;
@@ -23,10 +26,18 @@ pub mod adc;
 pub mod lcdc;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
+pub mod mailbox;
+#[cfg(feature = "sf32lb52x")]
+pub mod ipc;
 #[cfg(feature = "usb")]
 pub mod usb;
+pub mod rng;
+pub mod lcpu;
+pub(crate) mod lpaon;
 #[cfg(feature = "_time-driver")]
 pub mod time_driver;
+#[cfg(feature = "bt-hci")]
+pub mod bt_hci;
 
 // Reexports
 pub use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
@@ -74,17 +85,33 @@ pub mod config {
     impl Default for Config {
         fn default() -> Self {
             Self {
-                rcc: rcc::Config::new_keep(),
+                rcc: const { rcc::ConfigBuilder::new().checked() },
                 gpio1_it_priority: interrupt::Priority::P3,
             }
+        }
+    }
+
+    impl Config {
+        pub fn with_rcc(mut self, rcc: rcc::Config) -> Self {
+            self.rcc = rcc;
+            self
+        }
+
+        pub fn with_gpio1_it_priority(mut self, p: interrupt::Priority) -> Self {
+            self.gpio1_it_priority = p;
+            self
         }
     }
 }
 pub use config::Config;
 
+#[cfg(target_arch = "arm")]
+mod mpu;
+
 /// Initialize the `sifli-hal` with the provided configuration.
 ///
-/// This returns the peripheral singletons that can be used for creating drivers.
+/// Returns peripheral singletons. Clock frequencies can be queried
+/// via [`rcc::clocks()`] after initialization.
 ///
 /// This should only be called once at startup, otherwise it panics.
 pub fn init(config: Config) -> Peripherals {
@@ -95,22 +122,23 @@ pub fn init(config: Config) -> Peripherals {
     let p = Peripherals::take();
 
     unsafe {
-        config.rcc.apply();
+        rcc::init(config.rcc);
 
         #[cfg(feature = "_time-driver")]
         time_driver::init();
-        
+
         gpio::init(config.gpio1_it_priority);
         critical_section::with(|cs| {
             dma::init(cs);
         });
-        
+
     }
     p
 }
 
 fn system_init() {
     unsafe {
+        #[allow(unused_mut)] // mut needed on ARM for SCB cache ops
         let mut cp = cortex_m::Peripherals::steal();
 
         // enable CP0/CP1/CP2 Full Access
@@ -118,8 +146,18 @@ fn system_init() {
             r | (0b111111)
         });
 
+        // Consistent with SDK `mpu_config()`: invalidate stale I-cache before MPU/Cache configuration.
+        #[cfg(target_arch = "arm")]
+        cp.SCB.invalidate_icache();
+
+        // Configure MPU to make cross-core shared SRAM non-cacheable (matching SDK behavior).
+        #[cfg(target_arch = "arm")]
+        mpu::init();
+
         // Enable Cache
+        #[cfg(target_arch = "arm")]
         cp.SCB.enable_icache();
+        #[cfg(target_arch = "arm")]
         cp.SCB.enable_dcache(&mut cp.CPUID);
     }
 }
