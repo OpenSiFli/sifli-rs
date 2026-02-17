@@ -221,7 +221,7 @@ impl<'d, T: Instance> I2c<'d, T, Async> {
         regs.cr().modify(|w| w.set_iue(true));
 
         self.async_wait_bus_idle(timeout).await?;
-        clear_flags(regs);
+        clear_all_flags(regs);
 
         // Send START + address (write)
         regs.dbr().write(|w| w.set_data(addr << 1));
@@ -279,7 +279,7 @@ impl<'d, T: Instance> I2c<'d, T, Async> {
         regs.cr().modify(|w| w.set_iue(true));
 
         self.async_wait_bus_idle(timeout).await?;
-        clear_flags(regs);
+        clear_all_flags(regs);
 
         // Send START + address (read)
         regs.dbr().write(|w| w.set_data((addr << 1) | 1));
@@ -333,7 +333,7 @@ impl<'d, T: Instance> I2c<'d, T, Async> {
         regs.cr().modify(|w| w.set_iue(true));
 
         self.async_wait_bus_idle(timeout).await?;
-        clear_flags(regs);
+        clear_all_flags(regs);
 
         // Write phase
         regs.dbr().write(|w| w.set_data(addr << 1));
@@ -524,7 +524,7 @@ impl<'d, T: Instance, M: Mode> I2c<'d, T, M> {
         regs.cr().modify(|w| w.set_iue(true));
 
         wait_bus_idle(regs, timeout)?;
-        clear_flags(regs);
+        clear_all_flags(regs);
 
         // Send START + address (write)
         regs.dbr().write(|w| w.set_data(addr << 1));
@@ -586,7 +586,7 @@ impl<'d, T: Instance, M: Mode> I2c<'d, T, M> {
         regs.cr().modify(|w| w.set_iue(true));
 
         wait_bus_idle(regs, timeout)?;
-        clear_flags(regs);
+        clear_all_flags(regs);
 
         // Send START + address (read)
         regs.dbr().write(|w| w.set_data((addr << 1) | 1));
@@ -643,7 +643,7 @@ impl<'d, T: Instance, M: Mode> I2c<'d, T, M> {
         regs.cr().modify(|w| w.set_iue(true));
 
         wait_bus_idle(regs, timeout)?;
-        clear_flags(regs);
+        clear_all_flags(regs);
 
         // Write phase
         regs.dbr().write(|w| w.set_data(addr << 1));
@@ -773,13 +773,6 @@ fn stop_and_cleanup(regs: Regs) {
     clear_all_flags(regs);
 }
 
-/// Clear status flags before a new transfer.
-/// Uses modify on W1C register to clear ALL currently set flags
-/// (matching rcc-v2 behavior where modify reads back set bits and writes them to clear).
-fn clear_flags(regs: Regs) {
-    clear_all_flags(regs);
-}
-
 /// Clear all W1C status flags.
 fn clear_all_flags(regs: Regs) {
     regs.sr().write(|w| {
@@ -833,16 +826,111 @@ impl<T: Instance, M: Mode> embedded_hal_1::i2c::I2c for I2c<'_, T, M> {
         address: u8,
         operations: &mut [embedded_hal_1::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
-        for op in operations {
+        if operations.is_empty() {
+            return Ok(());
+        }
+
+        let regs = T::regs();
+        let timeout = Duration::from_millis(TIMEOUT_MS);
+
+        regs.cr().modify(|w| w.set_iue(false));
+        regs.cr().modify(|w| w.set_iue(true));
+        wait_bus_idle(regs, timeout)?;
+        clear_all_flags(regs);
+
+        let last_op_idx = operations.len() - 1;
+
+        for (op_idx, op) in operations.iter_mut().enumerate() {
+            let is_last_op = op_idx == last_op_idx;
+
             match op {
                 embedded_hal_1::i2c::Operation::Write(bytes) => {
-                    self.blocking_write(address, bytes)?;
+                    // Clear TE before sending address (first op already cleared by clear_all_flags)
+                    if op_idx > 0 {
+                        regs.sr().write(|w| w.set_te(true));
+                    }
+                    regs.dbr().write(|w| w.set_data(address << 1));
+                    regs.tcr().write(|w| {
+                        w.set_tb(true);
+                        w.set_start(true);
+                    });
+                    wait_te(regs, timeout)?;
+                    if let Err(e) = check_nack(regs) {
+                        stop_and_cleanup(regs);
+                        return Err(e);
+                    }
+
+                    if bytes.is_empty() {
+                        if is_last_op {
+                            stop_and_cleanup(regs);
+                        }
+                        continue;
+                    }
+
+                    let last_byte_idx = bytes.len() - 1;
+                    for (i, byte) in bytes.iter().enumerate() {
+                        regs.sr().write(|w| w.set_te(true));
+                        regs.dbr().write(|w| w.set_data(*byte));
+                        if is_last_op && i == last_byte_idx {
+                            regs.tcr().write(|w| {
+                                w.set_tb(true);
+                                w.set_stop(true);
+                            });
+                        } else {
+                            regs.tcr().write(|w| w.set_tb(true));
+                        }
+                        wait_te(regs, timeout)?;
+                        if let Err(e) = check_nack(regs) {
+                            stop_and_cleanup(regs);
+                            return Err(e);
+                        }
+                    }
                 }
                 embedded_hal_1::i2c::Operation::Read(buffer) => {
-                    self.blocking_read(address, buffer)?;
+                    if buffer.is_empty() {
+                        continue;
+                    }
+                    // Clear TE before sending read address
+                    regs.sr().write(|w| w.set_te(true));
+                    regs.dbr().write(|w| w.set_data((address << 1) | 1));
+                    regs.tcr().write(|w| {
+                        w.set_tb(true);
+                        w.set_start(true);
+                    });
+                    wait_te(regs, timeout)?;
+                    if let Err(e) = check_nack(regs) {
+                        stop_and_cleanup(regs);
+                        return Err(e);
+                    }
+
+                    let last_byte_idx = buffer.len() - 1;
+                    for (i, byte) in buffer.iter_mut().enumerate() {
+                        regs.sr().write(|w| w.set_rf(true));
+                        let is_last_byte = i == last_byte_idx;
+                        if is_last_op && is_last_byte {
+                            regs.tcr().write(|w| {
+                                w.set_tb(true);
+                                w.set_stop(true);
+                                w.set_nack(true);
+                            });
+                        } else if is_last_byte {
+                            // Last byte of non-last read: NACK to end read segment
+                            regs.tcr().write(|w| {
+                                w.set_tb(true);
+                                w.set_nack(true);
+                            });
+                        } else {
+                            regs.tcr().write(|w| w.set_tb(true));
+                        }
+                        wait_rf(regs, timeout)?;
+                        *byte = regs.dbr().read().data();
+                    }
                 }
             }
         }
+
+        wait_bus_idle(regs, timeout)?;
+        regs.cr().modify(|w| w.set_iue(false));
         Ok(())
     }
 }
@@ -853,16 +941,108 @@ impl<T: Instance> embedded_hal_async::i2c::I2c for I2c<'_, T, Async> {
         address: u8,
         operations: &mut [embedded_hal_1::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
-        for op in operations {
+        if operations.is_empty() {
+            return Ok(());
+        }
+
+        let regs = T::regs();
+        let timeout = Duration::from_millis(TIMEOUT_MS);
+
+        regs.cr().modify(|w| w.set_iue(false));
+        regs.cr().modify(|w| w.set_iue(true));
+        self.async_wait_bus_idle(timeout).await?;
+        clear_all_flags(regs);
+
+        let last_op_idx = operations.len() - 1;
+
+        for (op_idx, op) in operations.iter_mut().enumerate() {
+            let is_last_op = op_idx == last_op_idx;
+
             match op {
                 embedded_hal_1::i2c::Operation::Write(bytes) => {
-                    self.write(address, bytes).await?;
+                    if op_idx > 0 {
+                        regs.sr().write(|w| w.set_te(true));
+                    }
+                    regs.dbr().write(|w| w.set_data(address << 1));
+                    regs.tcr().write(|w| {
+                        w.set_tb(true);
+                        w.set_start(true);
+                    });
+                    self.async_wait_te(timeout).await?;
+                    if let Err(e) = check_nack(regs) {
+                        stop_and_cleanup(regs);
+                        return Err(e);
+                    }
+
+                    if bytes.is_empty() {
+                        if is_last_op {
+                            stop_and_cleanup(regs);
+                        }
+                        continue;
+                    }
+
+                    let last_byte_idx = bytes.len() - 1;
+                    for (i, byte) in bytes.iter().enumerate() {
+                        regs.sr().write(|w| w.set_te(true));
+                        regs.dbr().write(|w| w.set_data(*byte));
+                        if is_last_op && i == last_byte_idx {
+                            regs.tcr().write(|w| {
+                                w.set_tb(true);
+                                w.set_stop(true);
+                            });
+                        } else {
+                            regs.tcr().write(|w| w.set_tb(true));
+                        }
+                        self.async_wait_te(timeout).await?;
+                        if let Err(e) = check_nack(regs) {
+                            stop_and_cleanup(regs);
+                            return Err(e);
+                        }
+                    }
                 }
                 embedded_hal_1::i2c::Operation::Read(buffer) => {
-                    self.read(address, buffer).await?;
+                    if buffer.is_empty() {
+                        continue;
+                    }
+                    regs.sr().write(|w| w.set_te(true));
+                    regs.dbr().write(|w| w.set_data((address << 1) | 1));
+                    regs.tcr().write(|w| {
+                        w.set_tb(true);
+                        w.set_start(true);
+                    });
+                    self.async_wait_te(timeout).await?;
+                    if let Err(e) = check_nack(regs) {
+                        stop_and_cleanup(regs);
+                        return Err(e);
+                    }
+
+                    let last_byte_idx = buffer.len() - 1;
+                    for (i, byte) in buffer.iter_mut().enumerate() {
+                        regs.sr().write(|w| w.set_rf(true));
+                        let is_last_byte = i == last_byte_idx;
+                        if is_last_op && is_last_byte {
+                            regs.tcr().write(|w| {
+                                w.set_tb(true);
+                                w.set_stop(true);
+                                w.set_nack(true);
+                            });
+                        } else if is_last_byte {
+                            regs.tcr().write(|w| {
+                                w.set_tb(true);
+                                w.set_nack(true);
+                            });
+                        } else {
+                            regs.tcr().write(|w| w.set_tb(true));
+                        }
+                        self.async_wait_rf(timeout).await?;
+                        *byte = regs.dbr().read().data();
+                    }
                 }
             }
         }
+
+        self.async_wait_bus_idle(timeout).await?;
+        regs.cr().modify(|w| w.set_iue(false));
         Ok(())
     }
 }
