@@ -41,8 +41,9 @@ async fn main(_spawner: Spawner) {
     let _ = writeln!(usart, "\r\n=== WS2812 with DMA (Perfect Solution!) ===");
 
     // Create PWM with DMA
+    // NOTE: GPTIM2 is used by embassy time-driver, so we use GPTIM1 here
     let mut pwm = SimplePwm::new_with_dma(
-        p.GPTIM2,
+        p.GPTIM1,
         Some(PwmPin::new(p.PA32)), // Auto-configures GPIO
         None,
         None,
@@ -60,7 +61,7 @@ async fn main(_spawner: Spawner) {
     let _ = writeln!(usart, "  Frequency: 800 kHz");
     let _ = writeln!(usart, "  Max duty: {}", max);
     let _ = writeln!(usart, "  Bit0: {} (32%), Bit1: {} (64%)", bit0, bit1);
-    let _ = writeln!(usart, "  DMA: DMAC1_CH1 for GPTIM2_UPDATE\n");
+    let _ = writeln!(usart, "  DMA: DMAC1_CH1 for GPTIM1_UPDATE\n");
 
     let _ = writeln!(usart, "🌈 Starting HSV Rainbow Cycle...");
     let _ = writeln!(usart, "   Hue: 0-360° @ 50ms/step (20Hz refresh)\n");
