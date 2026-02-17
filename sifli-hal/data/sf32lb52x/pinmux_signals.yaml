@@ -49,6 +49,13 @@ hcpu:
     pin_trait:
       crate::usart::$cfg_pin<$peripheral>
 
+  # Muxed Peripheral: I2C
+  # Uses register lookup to determine the specific pin trait (e.g., SclPin, SdaPin).
+  - name: I2C
+    type: peripheral_mux
+    pin_trait:
+      crate::i2c::$cfg_pin<$peripheral>
+
   # No-Mux Peripheral: LCDC SPI
   # Uses Regex to match multiple signals (RSTB, TS, etc.) with a single rule.
   # dynamic substitution:

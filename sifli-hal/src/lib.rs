@@ -18,6 +18,7 @@ pub mod bt_hci;
 pub mod dma;
 pub mod efuse;
 pub mod gpio;
+pub mod i2c;
 #[cfg(feature = "sf32lb52x")]
 pub mod ipc;
 pub mod lcdc;
