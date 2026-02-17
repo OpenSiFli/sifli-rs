@@ -397,23 +397,44 @@ impl<'d, T: Instance> I2c<'d, T, Async> {
         let state = T::state();
         let start = Instant::now();
 
-        // Check if already set
-        if regs.sr().read().te() {
+        let sr = regs.sr().read();
+        if sr.te() {
             return Ok(());
         }
+        if sr.ald() {
+            return Err(Error::Arbitration);
+        }
+        if sr.bed() {
+            return Err(Error::Bus);
+        }
 
-        // Enable TE interrupt
-        regs.ier().modify(|w| w.set_teie(true));
+        // Enable TE and error interrupts
+        regs.ier().modify(|w| {
+            w.set_teie(true);
+            w.set_bedie(true);
+            w.set_aldie(true);
+        });
 
         poll_fn(|cx| {
             state.waker.register(cx.waker());
-            if regs.sr().read().te() {
+            let sr = regs.sr().read();
+            if sr.ald() {
+                return Poll::Ready(Err(Error::Arbitration));
+            }
+            if sr.bed() {
+                return Poll::Ready(Err(Error::Bus));
+            }
+            if sr.te() {
                 return Poll::Ready(Ok(()));
             }
             if start.elapsed() > timeout {
                 return Poll::Ready(Err(Error::Timeout));
             }
-            regs.ier().modify(|w| w.set_teie(true));
+            regs.ier().modify(|w| {
+                w.set_teie(true);
+                w.set_bedie(true);
+                w.set_aldie(true);
+            });
             Poll::Pending
         })
         .await
@@ -424,21 +445,43 @@ impl<'d, T: Instance> I2c<'d, T, Async> {
         let state = T::state();
         let start = Instant::now();
 
-        if regs.sr().read().rf() {
+        let sr = regs.sr().read();
+        if sr.rf() {
             return Ok(());
         }
+        if sr.ald() {
+            return Err(Error::Arbitration);
+        }
+        if sr.bed() {
+            return Err(Error::Bus);
+        }
 
-        regs.ier().modify(|w| w.set_rfie(true));
+        regs.ier().modify(|w| {
+            w.set_rfie(true);
+            w.set_bedie(true);
+            w.set_aldie(true);
+        });
 
         poll_fn(|cx| {
             state.waker.register(cx.waker());
-            if regs.sr().read().rf() {
+            let sr = regs.sr().read();
+            if sr.ald() {
+                return Poll::Ready(Err(Error::Arbitration));
+            }
+            if sr.bed() {
+                return Poll::Ready(Err(Error::Bus));
+            }
+            if sr.rf() {
                 return Poll::Ready(Ok(()));
             }
             if start.elapsed() > timeout {
                 return Poll::Ready(Err(Error::Timeout));
             }
-            regs.ier().modify(|w| w.set_rfie(true));
+            regs.ier().modify(|w| {
+                w.set_rfie(true);
+                w.set_bedie(true);
+                w.set_aldie(true);
+            });
             Poll::Pending
         })
         .await
@@ -715,31 +758,54 @@ fn wait_bus_idle(regs: Regs, timeout: Duration) -> Result<(), Error> {
     Ok(())
 }
 
-/// Wait for TE (Transmit Empty) flag. Simple poll, no error checking in loop.
+/// Wait for TE (Transmit Empty) flag, checking for bus errors.
 fn wait_te(regs: Regs, timeout: Duration) -> Result<(), Error> {
     let start = Instant::now();
-    while !regs.sr().read().te() {
+    loop {
+        let sr = regs.sr().read();
+        if sr.te() {
+            return Ok(());
+        }
+        if sr.ald() {
+            return Err(Error::Arbitration);
+        }
+        if sr.bed() {
+            return Err(Error::Bus);
+        }
         if start.elapsed() > timeout {
             return Err(Error::Timeout);
         }
     }
-    Ok(())
 }
 
-/// Wait for RF (Receive Full) flag.
+/// Wait for RF (Receive Full) flag, checking for bus errors.
 fn wait_rf(regs: Regs, timeout: Duration) -> Result<(), Error> {
     let start = Instant::now();
-    while !regs.sr().read().rf() {
+    loop {
+        let sr = regs.sr().read();
+        if sr.rf() {
+            return Ok(());
+        }
+        if sr.ald() {
+            return Err(Error::Arbitration);
+        }
+        if sr.bed() {
+            return Err(Error::Bus);
+        }
         if start.elapsed() > timeout {
             return Err(Error::Timeout);
         }
     }
-    Ok(())
 }
 
-/// Check NACK flag after transfer. Uses SR.NACK (matching rcc-v2).
+/// Check NACK and bus error flags after transfer.
 fn check_nack(regs: Regs) -> Result<(), Error> {
-    if regs.sr().read().nack() {
+    let sr = regs.sr().read();
+    if sr.ald() {
+        Err(Error::Arbitration)
+    } else if sr.bed() {
+        Err(Error::Bus)
+    } else if sr.nack() {
         Err(Error::Nack)
     } else {
         Ok(())
@@ -753,7 +819,10 @@ fn check_nack(regs: Regs) -> Result<(), Error> {
 /// Note: module reset (UR) preserves LCR/WCR/RCCR register values, but clears
 /// CR (MODE, SCLE, IUE). The CR is restored after reset.
 fn stop_and_cleanup(regs: Regs) {
-    regs.tcr().write(|w| w.set_stop(true));
+    regs.tcr().write(|w| {
+        w.set_tb(true);
+        w.set_stop(true);
+    });
     // Try to wait for bus idle
     if wait_bus_idle(regs, Duration::from_millis(5)).is_err() {
         // STOP didn't complete - force module reset and restore CR
@@ -791,7 +860,8 @@ fn clear_all_flags(regs: Regs) {
 /// Compute LCR and WCR timing values from clock and target frequency.
 fn compute_timing(i2c_clk: Hertz, target: Hertz) -> (u16, u8) {
     let dnf = 0u32;
-    let flv = ((i2c_clk.0 + (target.0 / 2)) / target.0 - dnf - 7 + 1) / 2;
+    let target_hz = if target.0 == 0 { 1 } else { target.0 };
+    let flv = ((i2c_clk.0 + (target_hz / 2)) / target_hz - dnf - 7 + 1) / 2;
     let flv = flv.min(0x1FF);
 
     let cnt = flv / 2;
