@@ -59,4 +59,5 @@ usbd-hid = { version = "0.8", features = ["defmt"] }
 embedded-graphics = { version = "0.8", features = ["defmt"] }
 display-driver = { version = "0.1.0" }
 display-driver-co5300 = { version = "0.1.1"}
+libm = "0.2"
 

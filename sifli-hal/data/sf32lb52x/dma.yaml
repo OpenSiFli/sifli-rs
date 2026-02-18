@@ -149,13 +149,15 @@ hcpu:
         used: false
       - name: audprc_tx_ch0
         id: 51
-        used: false
+        used: true
+        module: audio
       - name: audprc_rx_ch1
         id: 52
         used: false
       - name: audprc_rx_ch0
         id: 53
-        used: false
+        used: true
+        module: audio
       - name: gptim2_cc2
         id: 54
         used: true
