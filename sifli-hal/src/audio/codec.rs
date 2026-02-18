@@ -85,9 +85,9 @@ pub(crate) fn init_codec_dac(volume: u8) {
         let cnt = codec.pll_cal_result().read().pll_cnt() as u32;
         codec.pll_cal_cfg().modify(|w| w.set_en(false));
         if cnt < target_cnt {
-            fc_vco += delta;
+            fc_vco = fc_vco.saturating_add(delta);
         } else if cnt > target_cnt {
-            fc_vco -= delta;
+            fc_vco = fc_vco.saturating_sub(delta);
         }
         delta >>= 1;
     }

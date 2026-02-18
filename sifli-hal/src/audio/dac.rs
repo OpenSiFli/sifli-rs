@@ -94,6 +94,8 @@ impl<'d> AudioDac<'d, Blocking> {
     /// Write audio samples via DMA, blocking until the transfer completes.
     ///
     /// D-Cache is automatically cleaned before the DMA transfer.
+    ///
+    /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn write_blocking(&mut self, samples: &[u32]) {
         unsafe {
             clean_dcache(
@@ -122,6 +124,7 @@ impl<'d> AudioDac<'d, Blocking> {
     /// [`CircularPlayback`] guard — playback stops when the guard is dropped.
     ///
     /// D-Cache is automatically cleaned before the DMA transfer.
+    /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn start_circular<'buf>(
         &'buf mut self,
         samples: &'buf [u32],
@@ -139,6 +142,7 @@ impl<'d> AudioDac<'d, Blocking> {
 
         let mut opts = TransferOptions::default();
         opts.circular = true;
+        opts.complete_transfer_ir = false;
 
         let transfer = unsafe {
             Transfer::new_write(
@@ -200,6 +204,8 @@ impl<'d> AudioDac<'d, Async> {
     /// Samples format depends on [`ChannelMode`]:
     /// - Stereo: each `u32` = `[R:hi16 | L:lo16]`
     /// - Mono: each `u32` low 16 bits = sample
+    ///
+    /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub async fn write(&mut self, samples: &[u32]) -> Result<(), Error> {
         unsafe {
             clean_dcache(
@@ -238,6 +244,9 @@ impl<'d> AudioDac<'d, Async> {
         &'buf mut self,
         dma_buf: &'buf mut [u32],
     ) -> AudioStream<'buf> {
+        // Zero the DMA buffer to avoid playing garbage before first write().
+        dma_buf.fill(0);
+
         audprc()
             .tx_ch0_cfg()
             .modify(|w| w.set_dma_msk(true));
@@ -269,7 +278,7 @@ impl<'d, M: Mode> AudioDac<'d, M> {
         rcc::enable_and_reset::<crate::peripherals::AUDPRC>();
         rcc::enable_and_reset::<crate::peripherals::AUDCODEC>();
 
-        codec::init_codec_dac(config.volume);
+        codec::init_codec_dac(config.volume.min(15));
 
         let audprc = audprc();
 
@@ -469,14 +478,12 @@ impl<'a> AudioStream<'a> {
 
 impl<'a> Drop for AudioStream<'a> {
     fn drop(&mut self) {
-        // Mask the AUDPRC DMA request BEFORE WritableRingBuffer drops.
+        // Disable TX and mask DMA request BEFORE WritableRingBuffer drops.
         // Rust drops fields in declaration order AFTER the explicit Drop body runs,
         // so `ring` drops after this. WritableRingBuffer::drop calls request_stop()
-        // and spins on is_running(); masking the DMA request first ensures the DMA
-        // channel can actually stop (otherwise the AUDPRC keeps requesting transfers).
-        audprc()
-            .tx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        // and spins on is_running(); disabling TX first ensures the DMA channel can
+        // actually stop (otherwise the AUDPRC keeps requesting transfers).
+        tx_ch0_disable();
     }
 }
 

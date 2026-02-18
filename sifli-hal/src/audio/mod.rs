@@ -46,7 +46,6 @@
 //!     stream.write(&next_chunk).await.unwrap();
 //! }
 //! ```
-#![macro_use]
 
 pub(crate) mod codec;
 mod dac;
