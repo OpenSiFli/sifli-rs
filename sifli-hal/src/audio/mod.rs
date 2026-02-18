@@ -1,17 +1,18 @@
 //! Audio subsystem driver for SF32LB52x
 //!
 //! Supports AUDPRC (digital audio processor) + AUDCODEC (analog codec) for
-//! DAC output through the internal Class-D PA.
+//! DAC output (Class-D PA) and ADC input (microphone recording).
 //!
 //! # Architecture
 //!
 //! ```text
-//! DMA → AUDPRC TX_CH0 FIFO → DAC Path (mixer/vol) → AUDCODEC DAC → Class-D PA
+//! DAC: DMA → AUDPRC TX_CH0 → AUDCODEC DAC → Class-D PA
+//! ADC: ADCIN mic → AUDCODEC ADC → AUDPRC RX_CH0 → DMA
 //! ```
 //!
 //! AUDPRC and AUDCODEC are connected via internal bus (`op_mode=0`), no external pins needed.
 //!
-//! # Example (blocking)
+//! # DAC Example (blocking)
 //!
 //! ```ignore
 //! let mut dac = audio::AudioDac::new_blocking(
@@ -19,37 +20,34 @@
 //!     p.DMAC1_CH1,
 //!     audio::DacConfig::default(),
 //! );
-//! // One-shot playback
 //! dac.write_blocking(&samples);
 //! ```
 //!
-//! # Example (async, streaming)
+//! # ADC Example (async, streaming)
 //!
 //! ```ignore
 //! bind_interrupts!(struct Irqs {
 //!     AUDPRC => audio::InterruptHandler;
 //! });
 //!
-//! let mut dac = audio::AudioDac::new(
+//! let mut adc = audio::AudioAdc::new(
 //!     p.AUDPRC,
-//!     p.DMAC1_CH1,
+//!     p.DMAC1_CH2,
 //!     Irqs,
-//!     audio::DacConfig::default(),
+//!     audio::AdcConfig::default(),
 //! );
 //!
-//! // One-shot write
-//! dac.write(&samples).await;
-//!
-//! // Or: continuous streaming with ring buffer
-//! let mut stream = dac.start_stream(&mut dma_buf);
+//! let mut stream = adc.start_stream(&mut dma_buf);
 //! loop {
-//!     stream.write(&next_chunk).await.unwrap();
+//!     stream.read(&mut buf).await.unwrap();
 //! }
 //! ```
 
 pub(crate) mod codec;
+mod adc;
 mod dac;
 
+pub use adc::*;
 pub use dac::*;
 
 use embassy_hal_internal::Peripheral;
@@ -81,6 +79,14 @@ impl SampleRate {
             Self::Hz44100 => 1088,
             Self::Hz48000 => 1000,
         }
+    }
+
+    /// AUDPRC STB register `adc_div` value.
+    ///
+    /// Same divisor table as DAC: XTAL_48MHz / adc_div = sample_rate.
+    pub(crate) fn adc_div(&self) -> u16 {
+        // ADC and DAC share the same strobe divider values
+        self.dac_div()
     }
 
     /// STB clock select: PLL (true) or XTAL (false).
@@ -128,6 +134,29 @@ pub struct DacConfig {
 }
 
 impl Default for DacConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: SampleRate::Hz48000,
+            channel_mode: ChannelMode::Stereo,
+            volume: 6,
+        }
+    }
+}
+
+/// ADC input configuration.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct AdcConfig {
+    /// Sample rate (default: 48kHz).
+    pub sample_rate: SampleRate,
+    /// Channel mode (default: Stereo).
+    pub channel_mode: ChannelMode,
+    /// ADC path coarse volume, 0-15 (default: 6, 0dB).
+    pub volume: u8,
+}
+
+impl Default for AdcConfig {
     fn default() -> Self {
         Self {
             sample_rate: SampleRate::Hz48000,
