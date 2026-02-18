@@ -250,6 +250,16 @@ pub struct Config<I: LcdInterface> {
     /// LCD reset interval in microseconds
     pub reset_lcd_interval_us: u32,
 
+    /// This option cleans the dcache of the image area before sending data using LCDC.
+    /// Currently implemented using `cortex_m::Peripherals::steal()`.
+    ///
+    /// Since SF32 enables DCache by default, disabling this option may lead to memory
+    /// inconsistency, resulting in display corruption or visual artifacts.
+    ///
+    /// However, clean dcache is a time-consuming operation. If you want to manage dcache yourself,
+    /// you can disable this option.
+    pub dcache_clean: bool,
+
     /// Interface specific settings (e.g., SpiConfig)
     pub interface_config: I::Config,
 }
@@ -263,6 +273,7 @@ impl Default for Config<Spi> {
             in_color_format: InputColorFormat::Rgb565,
             reset_lcd_interval_us: 20,
             interface_config: SpiConfig::default(),
+            dcache_clean: true,
         }
     }
 }
@@ -528,6 +539,14 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
             (buffer.as_ptr() as usize).is_multiple_of(4),
             "Buffer address must be 4-byte aligned"
         );
+
+        // Clean D-cache to ensure data consistency
+        if self.config.dcache_clean {
+            unsafe {
+                let mut cp = cortex_m::Peripherals::steal();
+                cp.SCB.clean_dcache_by_slice(buffer);
+            }
+        }
 
         let regs = T::regs();
 
