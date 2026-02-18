@@ -27,7 +27,6 @@ use embedded_graphics::{
     text::Text,
 };
 
-// Import the display driver modules
 use display_driver::bus::QspiFlashBus;
 use display_driver::panel::reset::LCDResetOption;
 use display_driver::{ColorFormat, DisplayDriver};
@@ -36,6 +35,14 @@ use display_driver_co5300::{
     Co5300,
 };
 
+// Note: Although the hardware features a 390x450 display (the standard SiFli bundle), this example
+// renders only a partial area to minimize SRAM usage and maintain code simplicity.
+//
+// To drive the full resolution, it is recommended to utilize PSRAM coupled with
+// partial/block-based rendering.
+//
+// Additionally, due to pixel alignment requirements, the CO5300 controller mandates even-numbered
+// window dimensions (i.e., the refresh area must be a multiple of 2 in both rows and columns).
 const WIDTH: usize = 240;
 const HEIGHT: usize = 240;
 
