@@ -13,6 +13,7 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use embedded_io::Write as _;
 
+use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
 use sifli_hal::audio::{AudioDac, DacConfig};
 use sifli_hal::usart::{Config as UartConfig, Uart};
 
@@ -55,7 +56,8 @@ async fn main(_spawner: Spawner) {
     }
 
     // Create DAC (blocking mode, 48kHz stereo)
-    let mut dac = AudioDac::new_blocking(p.AUDPRC, p.DMAC1_CH1, DacConfig::default());
+    let pll = AudioPll::new(AudPllFreq::Mhz49_152);
+    let mut dac = AudioDac::new_blocking(p.AUDPRC, p.DMAC1_CH1, &pll, DacConfig::default());
     let _ = writeln!(usart, "AudioDac initialized");
 
     // Start circular playback — DMA loops the buffer forever

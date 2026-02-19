@@ -13,6 +13,7 @@ use panic_probe as _;
 use embassy_executor::Spawner;
 use embedded_io::Write as _;
 
+use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
 use sifli_hal::audio::{self, AudioDac, DacConfig};
 use sifli_hal::usart::{Config as UartConfig, Uart};
 use sifli_hal::bind_interrupts;
@@ -163,7 +164,8 @@ async fn main(_spawner: Spawner) {
     }
 
     // Create async AudioDac
-    let mut dac = AudioDac::new(p.AUDPRC, p.DMAC1_CH1, Irqs, DacConfig::default());
+    let pll = AudioPll::new(AudPllFreq::Mhz49_152);
+    let mut dac = AudioDac::new(p.AUDPRC, p.DMAC1_CH1, &pll, Irqs, DacConfig::default());
     let _ = writeln!(usart, "AudioDac initialized");
 
     // Start streaming with ring buffer

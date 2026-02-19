@@ -11,6 +11,7 @@ use embassy_hal_internal::{into_ref, PeripheralRef};
 
 use super::codec;
 use super::{AdcConfig, ChannelMode, Error, RxCh0Dma};
+use crate::aud_pll::AudioPll;
 use crate::dma::{ChannelAndRequest, ReadableRingBuffer, TransferOptions};
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac;
@@ -57,6 +58,7 @@ unsafe fn invalidate_dcache(addr: usize, size: usize) {
 pub struct AudioAdc<'d, M: Mode> {
     _peri: PeripheralRef<'d, crate::peripherals::AUDPRC>,
     rx_dma: ChannelAndRequest<'d>,
+    _pll: &'d AudioPll,
     config: AdcConfig,
     _phantom: PhantomData<M>,
 }
@@ -73,8 +75,10 @@ impl<'d> AudioAdc<'d, Blocking> {
     pub fn new_blocking(
         peri: impl Peripheral<P = crate::peripherals::AUDPRC> + 'd,
         rx_dma: impl Peripheral<P = impl RxCh0Dma<crate::peripherals::AUDPRC>> + 'd,
+        pll: &'d AudioPll,
         config: AdcConfig,
     ) -> Self {
+        pll.assert_compatible(config.sample_rate);
         into_ref!(peri);
         let rx_dma = new_dma!(rx_dma);
 
@@ -83,6 +87,7 @@ impl<'d> AudioAdc<'d, Blocking> {
         Self {
             _peri: peri,
             rx_dma: rx_dma.unwrap(),
+            _pll: pll,
             config,
             _phantom: PhantomData,
         }
@@ -127,12 +132,14 @@ impl<'d> AudioAdc<'d, Async> {
     pub fn new(
         peri: impl Peripheral<P = crate::peripherals::AUDPRC> + 'd,
         rx_dma: impl Peripheral<P = impl RxCh0Dma<crate::peripherals::AUDPRC>> + 'd,
+        pll: &'d AudioPll,
         _irq: impl crate::interrupt::typelevel::Binding<
                 crate::interrupt::typelevel::AUDPRC,
                 super::InterruptHandler,
             > + 'd,
         config: AdcConfig,
     ) -> Self {
+        pll.assert_compatible(config.sample_rate);
         into_ref!(peri);
         let rx_dma = new_dma!(rx_dma);
 
@@ -145,6 +152,7 @@ impl<'d> AudioAdc<'d, Async> {
         Self {
             _peri: peri,
             rx_dma: rx_dma.unwrap(),
+            _pll: pll,
             config,
             _phantom: PhantomData,
         }
@@ -218,9 +226,10 @@ impl<'d> AudioAdc<'d, Async> {
 
 impl<'d, M: Mode> AudioAdc<'d, M> {
     /// Initialize all hardware: RCC, AUDCODEC, AUDPRC ADC path.
+    ///
+    /// AudioPll must already be initialized (enables AUDCODEC clock + PLL).
     fn init_hardware(config: &AdcConfig) {
         rcc::enable_and_reset::<crate::peripherals::AUDPRC>();
-        rcc::enable::<crate::peripherals::AUDCODEC>();
 
         codec::init_codec_adc(config.volume.min(15));
 

@@ -16,6 +16,7 @@ use core::mem::MaybeUninit;
 use embassy_executor::Spawner;
 use embassy_time::Delay;
 
+use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
 use sifli_hal::audio::{self, AudioAdc};
 use sifli_hal::bind_interrupts;
 use sifli_hal::lcdc::{self, SpiConfig};
@@ -366,9 +367,11 @@ async fn main(_spawner: Spawner) {
     };
 
     // ===== Audio init =====
+    let pll = AudioPll::new(AudPllFreq::Mhz49_152);
     let mut adc = AudioAdc::new(
         p.AUDPRC,
         p.DMAC1_CH2,
+        &pll,
         Irqs,
         audio::AdcConfig::default(),
     );

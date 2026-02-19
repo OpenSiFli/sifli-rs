@@ -54,61 +54,7 @@ use embassy_hal_internal::Peripheral;
 
 use crate::{interrupt, peripherals};
 
-/// Audio sample rate.
-///
-/// Determines the AUDPRC strobe divider from a 48MHz XTAL clock source.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum SampleRate {
-    Hz8000,
-    Hz16000,
-    Hz32000,
-    Hz44100,
-    Hz48000,
-}
-
-impl SampleRate {
-    /// AUDPRC STB register `dac_div` value.
-    ///
-    /// From C SDK `audprc_clk_cfg_tb`: XTAL_48MHz / dac_div = sample_rate.
-    pub(crate) fn dac_div(&self) -> u16 {
-        match self {
-            Self::Hz8000 => 6000,
-            Self::Hz16000 => 3000,
-            Self::Hz32000 => 1500,
-            Self::Hz44100 => 1088,
-            Self::Hz48000 => 1000,
-        }
-    }
-
-    /// AUDPRC STB register `adc_div` value.
-    ///
-    /// Same divisor table as DAC: XTAL_48MHz / adc_div = sample_rate.
-    pub(crate) fn adc_div(&self) -> u16 {
-        // ADC and DAC share the same strobe divider values
-        self.dac_div()
-    }
-
-    /// STB clock select: PLL (true) or XTAL (false).
-    ///
-    /// All rates currently use XTAL (48MHz). 44.1kHz uses XTAL/1088 ≈ 44.12kHz
-    /// (~0.04% error). True PLL-based 44.1k family support (45.1584MHz) will
-    /// come when the `aud_pll` module is integrated.
-    pub(crate) fn stb_clk_sel(&self) -> bool {
-        false
-    }
-
-    /// Sample rate in Hz.
-    pub fn hz(&self) -> u32 {
-        match self {
-            Self::Hz8000 => 8000,
-            Self::Hz16000 => 16000,
-            Self::Hz32000 => 32000,
-            Self::Hz44100 => 44100,
-            Self::Hz48000 => 48000,
-        }
-    }
-}
+pub use crate::aud_pll::SampleRate;
 
 /// Audio channel mode.
 ///

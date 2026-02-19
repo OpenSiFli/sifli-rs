@@ -12,6 +12,7 @@ mod macros;
 mod utils;
 
 pub mod adc;
+pub mod aud_pll;
 pub mod audio;
 #[cfg(feature = "bt-hci")]
 pub mod bt_hci;
