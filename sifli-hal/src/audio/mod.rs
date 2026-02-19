@@ -91,9 +91,11 @@ impl SampleRate {
 
     /// STB clock select: PLL (true) or XTAL (false).
     ///
-    /// 44.1kHz uses PLL for better accuracy; others use XTAL.
+    /// All rates currently use XTAL (48MHz). 44.1kHz uses XTAL/1088 ≈ 44.12kHz
+    /// (~0.04% error). True PLL-based 44.1k family support (45.1584MHz) will
+    /// come when the `aud_pll` module is integrated.
     pub(crate) fn stb_clk_sel(&self) -> bool {
-        matches!(self, Self::Hz44100)
+        false
     }
 
     /// Sample rate in Hz.

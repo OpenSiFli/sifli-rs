@@ -276,7 +276,7 @@ impl<'d, M: Mode> AudioDac<'d, M> {
     /// Initialize all hardware: RCC, AUDCODEC, AUDPRC.
     fn init_hardware(config: &DacConfig) {
         rcc::enable_and_reset::<crate::peripherals::AUDPRC>();
-        rcc::enable_and_reset::<crate::peripherals::AUDCODEC>();
+        rcc::enable::<crate::peripherals::AUDCODEC>();
 
         codec::init_codec_dac(config.volume.min(15));
 

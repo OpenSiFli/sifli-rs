@@ -220,7 +220,7 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
     /// Initialize all hardware: RCC, AUDCODEC, AUDPRC ADC path.
     fn init_hardware(config: &AdcConfig) {
         rcc::enable_and_reset::<crate::peripherals::AUDPRC>();
-        rcc::enable_and_reset::<crate::peripherals::AUDCODEC>();
+        rcc::enable::<crate::peripherals::AUDCODEC>();
 
         codec::init_codec_adc(config.volume.min(15));
 
@@ -281,6 +281,9 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
     }
 
     /// Set ADC volume (0-15).
+    ///
+    /// Updates both the AUDPRC digital path and AUDCODEC ADC channel gains
+    /// to keep them in sync.
     pub fn set_volume(&mut self, vol: u8) {
         let vol = vol.min(15);
         self.config.volume = vol;
@@ -289,6 +292,10 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
             w.set_rough_vol_l(vol);
             w.set_rough_vol_r(vol);
         });
+
+        let codec = pac::AUDCODEC;
+        codec.adc_ch0_cfg().modify(|w| w.set_rough_vol(vol));
+        codec.adc_ch1_cfg().modify(|w| w.set_rough_vol(vol));
     }
 
     /// Get current configuration.
