@@ -94,6 +94,12 @@ impl LcpuConfig {
         self.ble.bd_addr = addr;
         self
     }
+
+    /// Enable or disable BLE controller sleep between radio events.
+    pub const fn sleep_enabled(mut self, enabled: bool) -> Self {
+        self.ble.controller.sleep_enabled = enabled;
+        self
+    }
 }
 
 impl Default for LcpuConfig {

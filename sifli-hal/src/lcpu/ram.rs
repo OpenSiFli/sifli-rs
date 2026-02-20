@@ -286,10 +286,8 @@ pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) ->
                 RomControlBlock::HCPU2LCPU_MB_CH1_BUF_START_ADDR as u32,
             );
 
-            // BT Config — must include sleep bits so ROM disables sleep
-            // (without SLEEP_MODE/SLEEP_ENABLED in bit_valid, ROM uses internal
-            // defaults which may enable sleep, causing 0x3E connection timeouts
-            // since we lack ble_standby_sleep_after_handler).
+            // BT Config — sleep bits must be in bit_valid so ROM respects our settings
+            // rather than using its internal defaults.
             let bt_cfg = BtRomConfig {
                 bit_valid: (1 << 10)  // is_fpga
                     | (1 << 7)        // rc_cycle
@@ -300,8 +298,8 @@ pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) ->
                     | (1 << 1), // controller_enable
                 controller_enable_bit: 0x03, // BLE(1) | BT(2)
                 lld_prog_delay: ctrl.lld_prog_delay,
-                default_sleep_mode: 0,    // No sleep
-                default_sleep_enabled: 0, // Disable sleep
+                default_sleep_mode: 0, // ROM linker map confirms this field is unused
+                default_sleep_enabled: ctrl.sleep_enabled as u8,
                 default_xtal_enabled: ctrl.xtal_enabled as u8,
                 default_rc_cycle: ctrl.rc_cycle,
                 is_fpga: 0,

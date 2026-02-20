@@ -86,11 +86,15 @@ pub(crate) fn init(config: &ControllerConfig) {
     // SDK step 1: rf_ptc_config(1) — PTC2 packet-detect trigger for CFO tracking
     setup_cfo_tracking();
 
-    // SDK step 4 replacement: bt_sleep_control(0) — disable BLE controller sleep
+    // SDK step 4: bt_sleep_control() — BLE controller sleep gate
     //
-    // We lack ble_standby_sleep_after_handler() (which reconfigures MAC clock + PTC
-    // after every wakeup). Without it, sleep causes MAC clock loss → 0x3E timeout.
-    disable_ble_sleep();
+    // LCPU firmware's ble_standby_sleep_after_handler() handles wakeup recovery
+    // (MAC clock + PTC reconfiguration) internally.
+    if config.sleep_enabled {
+        enable_ble_sleep();
+    } else {
+        disable_ble_sleep();
+    }
 }
 
 /// Configure BLE scheduler sleep timing parameters.
@@ -146,12 +150,11 @@ fn configure_sleep_timing(config: &ControllerConfig) {
             // lld_prog_delay
             core::ptr::write_volatile(&mut cfg.lld_prog_delay, config.lld_prog_delay);
 
-            // default_sleep_mode = 0 (no sleep)
+            // default_sleep_mode = 0 (ROM linker map confirms this field is unused)
             core::ptr::write_volatile(&mut cfg.default_sleep_mode, 0);
 
-            // default_sleep_enabled = 0 (disable sleep)
-            // Without bluetooth_pm_init(), sleep would cause missed connection events.
-            core::ptr::write_volatile(&mut cfg.default_sleep_enabled, 0);
+            // default_sleep_enabled: controlled by config
+            core::ptr::write_volatile(&mut cfg.default_sleep_enabled, config.sleep_enabled as u8);
 
             // default_xtal_enabled
             core::ptr::write_volatile(&mut cfg.default_xtal_enabled, config.xtal_enabled as u8);
@@ -260,13 +263,17 @@ fn setup_cfo_tracking() {
     );
 }
 
+/// Enable BLE controller sleep.
+///
+/// SDK equivalent: `bt_sleep_control(1)` → `LPSYS_AON.RESERVE0 = 0`.
+fn enable_ble_sleep() {
+    crate::pac::LPSYS_AON.reserve0().write(|w| w.set_data(0));
+    debug!("BLE sleep enabled (LPSYS_AON.RESERVE0=0)");
+}
+
 /// Disable BLE controller sleep.
 ///
-/// SDK equivalent: `bt_sleep_control(0)` which writes `LPSYS_AON.RESERVE0 = 1`.
-///
-/// Without `ble_standby_sleep_after_handler()` (which reconfigures MAC clock
-/// and PTC after every wakeup), sleep causes MAC clock loss and subsequently
-/// 0x3E Connection Timeout disconnects.
+/// SDK equivalent: `bt_sleep_control(0)` → `LPSYS_AON.RESERVE0 = 1`.
 fn disable_ble_sleep() {
     crate::pac::LPSYS_AON.reserve0().write(|w| w.set_data(1));
     debug!("BLE sleep disabled (LPSYS_AON.RESERVE0=1)");

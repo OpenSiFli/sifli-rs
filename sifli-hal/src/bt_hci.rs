@@ -376,6 +376,21 @@ impl<const SLOTS: usize> BleController<SLOTS> {
         })
     }
 
+    /// Enable or disable BLE controller sleep at runtime.
+    ///
+    /// SDK equivalent: `bt_sleep_control()` in `bf0_bt_common.c:732`.
+    pub fn set_sleep_enabled(&self, enabled: bool) {
+        let _w = unsafe { crate::lcpu::WakeGuard::acquire() };
+        // SDK: HAL_Delay(5) — wait for LCPU to stabilize after wake
+        crate::cortex_m_blocking_delay_us(5_000);
+        if enabled {
+            crate::pac::LPSYS_AON.reserve0().write(|w| w.set_data(0));
+        } else {
+            crate::pac::LPSYS_AON.reserve0().write(|w| w.set_data(1));
+        }
+        // _w drops → cancel_lcpu_active_request()
+    }
+
     /// Shut down BLE and power off LCPU.
     pub fn shutdown(self) {
         let Self { lcpu, .. } = self;

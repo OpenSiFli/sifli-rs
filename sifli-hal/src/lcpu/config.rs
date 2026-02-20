@@ -28,6 +28,13 @@ pub struct ControllerConfig {
     /// SDK: `rom_config_set_default_rc_cycle(HAL_RC_CAL_GetLPCycle_ex())`.
     /// Typical value: 20 (SDK default when using RC10K).
     pub rc_cycle: u8,
+
+    /// Enable BLE controller sleep between radio events.
+    ///
+    /// When `true`, LCPU enters WFI between BLE events (advertising/connection intervals).
+    /// LCPU firmware handles wakeup recovery (MAC clock, PTC, RF) internally.
+    /// Default: `false` (always active, safer but higher power consumption).
+    pub sleep_enabled: bool,
 }
 
 impl Default for ControllerConfig {
@@ -36,6 +43,7 @@ impl Default for ControllerConfig {
             lld_prog_delay: 3,
             xtal_enabled: false,
             rc_cycle: 20,
+            sleep_enabled: false,
         }
     }
 }
@@ -270,6 +278,7 @@ impl BleConfig {
                 lld_prog_delay: 3,
                 xtal_enabled: false,
                 rc_cycle: 20,
+                sleep_enabled: false,
             },
             bd_addr: [0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD],
         }
