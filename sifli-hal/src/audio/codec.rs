@@ -31,22 +31,22 @@ pub(crate) fn init_codec_dac(volume: u8) {
     codec.cfg().modify(|w| w.set_adc_en_dly_sel(3));
 
     codec.dac_cfg().write(|w| {
-        w.set_osr_sel(0);
+        w.set_osr_sel(0); // OSR = 300 (oversampling ratio)
         w.set_op_mode(0); // internal bus from AUDPRC
         w.set_path_reset(false);
-        w.set_clk_src_sel(false);
-        w.set_clk_div(10);
+        w.set_clk_src_sel(false); // XTAL 48MHz master clock
+        w.set_clk_div(10); // 48MHz / (10+1) ≈ 4.36MHz DAC clock
     });
 
     codec.dac_ch0_cfg().write(|w| {
         w.set_enable(true);
         w.set_dout_mute(false);
-        w.set_dem_mode(2);
+        w.set_dem_mode(2); // DEM (Dynamic Element Matching): 2nd-order
         w.set_dma_en(false); // data from AUDPRC, not APB DMA
         w.set_rough_vol(volume);
         w.set_fine_vol(0);
         w.set_data_format(true); // 16-bit
-        w.set_sinc_gain(0x14D);
+        w.set_sinc_gain(0x14D); // SINC filter gain = 333 (C SDK default for OSR=300)
     });
     codec.dac_ch0_cfg_ext().write(|w| {
         w.set_ramp_en(true);
@@ -164,13 +164,9 @@ pub(crate) fn init_codec_adc(volume: u8) {
     let codec = pac::AUDCODEC;
 
     // Enable LPSYS_RCC AUDCODEC clock (bit 24 of ENR1).
-    // ADC analog portion uses LP clock domain. The PAC may not expose this
-    // register field, so we use raw pointer access as in the validated test.
-    unsafe {
-        let lpsys_rcc_enr1 = 0x4000_0004 as *mut u32;
-        let val = core::ptr::read_volatile(lpsys_rcc_enr1);
-        core::ptr::write_volatile(lpsys_rcc_enr1, val | (1 << 24));
-    }
+    // ADC analog portion uses LP clock domain. Bit 24 is in the SVD's RSVD
+    // region so there is no named field — use raw register access.
+    pac::LPSYS_RCC.enr1().modify(|w| w.0 |= 1 << 24);
     delay_ms(1);
 
     // ===== MICBIAS enable =====
@@ -244,11 +240,11 @@ pub(crate) fn init_codec_adc(volume: u8) {
 
     // ADC_CFG: normal mode (op_mode=0, data → AUDPRC RX)
     codec.adc_cfg().write(|w| {
-        w.set_osr_sel(0); // OSR=200
-        w.set_op_mode(0); // normal mode → AUDPRC
+        w.set_osr_sel(0); // OSR = 200 (oversampling ratio)
+        w.set_op_mode(0); // normal mode → AUDPRC internal bus
         w.set_path_reset(false);
-        w.set_clk_src_sel(false); // XTAL 48MHz
-        w.set_clk_div(5); // 48/(5+1)=8MHz
+        w.set_clk_src_sel(false); // XTAL 48MHz master clock
+        w.set_clk_div(5); // 48MHz / (5+1) = 8MHz ADC clock
     });
 
     let vol = volume.min(15);
@@ -311,4 +307,7 @@ pub(crate) fn shutdown_adc() {
         w.set_en_clk_adc1(false);
         w.set_en_clk_adc0(false);
     });
+
+    // Disable LPSYS_RCC AUDCODEC clock (bit 24 of ENR1), enabled during init.
+    pac::LPSYS_RCC.enr1().modify(|w| w.0 &= !(1 << 24));
 }

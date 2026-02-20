@@ -159,11 +159,11 @@ pub struct AudioPll {
 }
 
 fn delay_us(us: u32) {
-    crate::cortex_m_blocking_delay_us(us);
+    crate::blocking_delay_us(us);
 }
 
 fn delay_ms(ms: u32) {
-    crate::cortex_m_blocking_delay_us(ms * 1000);
+    crate::blocking_delay_us(ms * 1000);
 }
 
 impl AudioPll {

@@ -15,9 +15,13 @@
 //! # DAC Example (blocking)
 //!
 //! ```ignore
+//! use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+//!
+//! let pll = AudioPll::new(AudPllFreq::Mhz49_152);
 //! let mut dac = audio::AudioDac::new_blocking(
 //!     p.AUDPRC,
 //!     p.DMAC1_CH1,
+//!     &pll,
 //!     audio::DacConfig::default(),
 //! );
 //! dac.write_blocking(&samples);
@@ -26,13 +30,17 @@
 //! # ADC Example (async, streaming)
 //!
 //! ```ignore
+//! use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+//!
 //! bind_interrupts!(struct Irqs {
 //!     AUDPRC => audio::InterruptHandler;
 //! });
 //!
+//! let pll = AudioPll::new(AudPllFreq::Mhz49_152);
 //! let mut adc = audio::AudioAdc::new(
 //!     p.AUDPRC,
 //!     p.DMAC1_CH2,
+//!     &pll,
 //!     Irqs,
 //!     audio::AdcConfig::default(),
 //! );

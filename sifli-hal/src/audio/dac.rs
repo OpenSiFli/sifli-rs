@@ -285,7 +285,9 @@ impl<'d, M: Mode> AudioDac<'d, M> {
     ///
     /// AudioPll must already be initialized (enables AUDCODEC clock + PLL).
     fn init_hardware(config: &DacConfig) {
-        rcc::enable_and_reset::<crate::peripherals::AUDPRC>();
+        // Use enable() instead of enable_and_reset() to avoid resetting AUDPRC
+        // when the other direction (ADC) may already be active.
+        rcc::enable::<crate::peripherals::AUDPRC>();
 
         codec::init_codec_dac(config.volume.min(15));
 
@@ -293,16 +295,10 @@ impl<'d, M: Mode> AudioDac<'d, M> {
 
         audprc.cfg().modify(|w| w.set_enable(false));
 
-        // Flush FIFOs
-        audprc.cfg().modify(|w| {
-            w.set_dac_path_flush(true);
-            w.set_adc_path_flush(true);
-        });
+        // Flush DAC FIFO only (leave ADC path undisturbed)
+        audprc.cfg().modify(|w| w.set_dac_path_flush(true));
         crate::blocking_delay_us(10);
-        audprc.cfg().modify(|w| {
-            w.set_dac_path_flush(false);
-            w.set_adc_path_flush(false);
-        });
+        audprc.cfg().modify(|w| w.set_dac_path_flush(false));
 
         // Clock source
         audprc.cfg().modify(|w| {
@@ -505,9 +501,7 @@ impl<'a> Drop for AudioStream<'a> {
 /// DMA-based transfers use DMA channel interrupts managed by the DMA layer.
 /// This handler clears AUDPRC-specific interrupt flags (reserved for future
 /// error detection such as FIFO overrun).
-pub struct InterruptHandler {
-    _phantom: PhantomData<()>,
-}
+pub struct InterruptHandler;
 
 impl crate::interrupt::typelevel::Handler<crate::interrupt::typelevel::AUDPRC>
     for InterruptHandler

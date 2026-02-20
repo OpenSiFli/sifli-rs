@@ -229,7 +229,9 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
     ///
     /// AudioPll must already be initialized (enables AUDCODEC clock + PLL).
     fn init_hardware(config: &AdcConfig) {
-        rcc::enable_and_reset::<crate::peripherals::AUDPRC>();
+        // Use enable() instead of enable_and_reset() to avoid resetting AUDPRC
+        // when the other direction (DAC) may already be active.
+        rcc::enable::<crate::peripherals::AUDPRC>();
 
         codec::init_codec_adc(config.volume.min(15));
 
@@ -237,16 +239,10 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
 
         audprc.cfg().modify(|w| w.set_enable(false));
 
-        // Flush FIFOs
-        audprc.cfg().modify(|w| {
-            w.set_dac_path_flush(true);
-            w.set_adc_path_flush(true);
-        });
+        // Flush ADC FIFO only (leave DAC path undisturbed)
+        audprc.cfg().modify(|w| w.set_adc_path_flush(true));
         crate::blocking_delay_us(10);
-        audprc.cfg().modify(|w| {
-            w.set_dac_path_flush(false);
-            w.set_adc_path_flush(false);
-        });
+        audprc.cfg().modify(|w| w.set_adc_path_flush(false));
 
         // Clock source
         audprc.cfg().modify(|w| {
@@ -344,21 +340,15 @@ impl<'a> AudioInputStream<'a> {
     /// Read samples from the ring buffer, waiting until the buffer is filled.
     ///
     /// Returns the remaining number of elements available for immediate reading.
-    /// D-Cache is automatically invalidated.
+    ///
+    /// Note: DMA buffers reside in SRAM which is configured as non-cacheable
+    /// via MPU, so no D-Cache maintenance is needed for ring buffer reads.
     pub async fn read(&mut self, buf: &mut [u32]) -> Result<usize, Error> {
         let remaining = self
             .ring
             .read_exact(buf)
             .await
             .map_err(|_| Error::Overrun)?;
-
-        // DMA wrote to memory → invalidate D-Cache so CPU sees fresh data
-        unsafe {
-            invalidate_dcache(
-                buf.as_ptr() as usize,
-                buf.len() * core::mem::size_of::<u32>(),
-            );
-        }
 
         Ok(remaining)
     }
