@@ -25,7 +25,7 @@ bind_interrupts!(struct Irqs {
 
 // PCM data: 48kHz, 16-bit signed LE, stereo (interleaved L16 R16)
 // Each 4 bytes = one u32 FIFO entry = [R:hi16 | L:lo16]
-static PCM_DATA: &[u8] = include_bytes!("yanpai.raw");
+static PCM_DATA: &[u8] = include_bytes!("../../assets/yanpai.raw");
 
 // DMA ring buffer in SRAM (DMAC1 cannot access PSRAM)
 // 9600 u32 = 100ms @ 48kHz stereo
