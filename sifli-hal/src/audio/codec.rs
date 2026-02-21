@@ -8,13 +8,31 @@
 
 use crate::pac;
 
-fn delay_us(us: u32) {
-    crate::blocking_delay_us(us);
-}
+// ---------------------------------------------------------------------------
+// Named constants for AUDCODEC register field values
+// (These replace magic numbers; ideally they'd be PAC-level enums in future.)
+// ---------------------------------------------------------------------------
 
-fn delay_ms(ms: u32) {
-    crate::blocking_delay_us(ms * 1000);
-}
+// DAC oversampling ratio: OSR = 300
+const DAC_OSR_300: u8 = 0;
+// ADC oversampling ratio: OSR = 200
+const ADC_OSR_200: u8 = 0;
+// Operation mode: internal bus (data via AUDPRC, not APB)
+const OP_MODE_INTERNAL_BUS: u8 = 0;
+// Dynamic Element Matching: 2nd-order
+const DEM_2ND_ORDER: u8 = 2;
+// SINC filter gain for OSR=300 (C SDK default: 333 = 0x14D)
+const SINC_GAIN_OSR300: u16 = 0x14D;
+// DAC clock divider: 48 MHz / (10+1) ≈ 4.36 MHz
+const DAC_CLK_DIV: u8 = 10;
+// ADC clock divider: 48 MHz / (5+1) = 8 MHz
+const ADC_CLK_DIV: u8 = 5;
+// PGA gain: 18 dB
+const PGA_GAIN_18DB: u8 = 4;
+// ADC voltage reference selection
+const ADC_VREF_SEL: u8 = 2;
+// HPF coefficient for ADC high-pass filter
+const ADC_HPF_COEF: u8 = 0x7;
 
 /// Initialize AUDCODEC for DAC output.
 ///
@@ -31,22 +49,22 @@ pub(crate) fn init_codec_dac(volume: u8) {
     codec.cfg().modify(|w| w.set_adc_en_dly_sel(3));
 
     codec.dac_cfg().write(|w| {
-        w.set_osr_sel(0); // OSR = 300 (oversampling ratio)
-        w.set_op_mode(0); // internal bus from AUDPRC
+        w.set_osr_sel(DAC_OSR_300);
+        w.set_op_mode(OP_MODE_INTERNAL_BUS);
         w.set_path_reset(false);
         w.set_clk_src_sel(false); // XTAL 48MHz master clock
-        w.set_clk_div(10); // 48MHz / (10+1) ≈ 4.36MHz DAC clock
+        w.set_clk_div(DAC_CLK_DIV);
     });
 
     codec.dac_ch0_cfg().write(|w| {
         w.set_enable(true);
         w.set_dout_mute(false);
-        w.set_dem_mode(2); // DEM (Dynamic Element Matching): 2nd-order
+        w.set_dem_mode(DEM_2ND_ORDER);
         w.set_dma_en(false); // data from AUDPRC, not APB DMA
         w.set_rough_vol(volume);
         w.set_fine_vol(0);
         w.set_data_format(true); // 16-bit
-        w.set_sinc_gain(0x14D); // SINC filter gain = 333 (C SDK default for OSR=300)
+        w.set_sinc_gain(SINC_GAIN_OSR300);
     });
     codec.dac_ch0_cfg_ext().write(|w| {
         w.set_ramp_en(true);
@@ -89,19 +107,19 @@ pub(crate) fn start_dac_analog() {
         w.set_diva_clk_dig(2);
     });
     codec.pll_cfg2().modify(|w| w.set_rstb(false));
-    delay_us(100);
+    crate::blocking_delay_us(100);
     codec.pll_cfg2().modify(|w| w.set_rstb(true));
 
     // DAC1 analog power-up sequence
     codec.dac1_cfg().modify(|w| w.set_en_os_dac(false));
     codec.dac1_cfg().modify(|w| w.set_en_vcm(true));
-    delay_us(5);
+    crate::blocking_delay_us(5);
     codec.dac1_cfg().modify(|w| w.set_en_amp(true));
-    delay_us(1);
+    crate::blocking_delay_us(1);
     codec.dac1_cfg().modify(|w| w.set_en_os_dac(true));
-    delay_us(10);
+    crate::blocking_delay_us(10);
     codec.dac1_cfg().modify(|w| w.set_en_dac(true));
-    delay_us(10);
+    crate::blocking_delay_us(10);
     codec.dac1_cfg().modify(|w| w.set_sr(false));
 }
 
@@ -167,7 +185,7 @@ pub(crate) fn init_codec_adc(volume: u8) {
     // ADC analog portion uses LP clock domain. Bit 24 is in the SVD's RSVD
     // region so there is no named field — use raw register access.
     pac::LPSYS_RCC.enr1().modify(|w| w.0 |= 1 << 24);
-    delay_ms(1);
+    crate::blocking_delay_us(1_000);
 
     // ===== MICBIAS enable =====
     codec.bg_cfg0().modify(|w| w.set_en_smpl(false));
@@ -175,7 +193,7 @@ pub(crate) fn init_codec_adc(volume: u8) {
     codec
         .adc_ana_cfg()
         .modify(|w| w.set_micbias_chop_en(false));
-    delay_ms(2);
+    crate::blocking_delay_us(2_000);
     codec.bg_cfg0().modify(|w| w.set_en_smpl(true));
 
     // ===== ADC analog clocks (PLL_CFG6) =====
@@ -196,9 +214,9 @@ pub(crate) fn init_codec_adc(volume: u8) {
     });
     // Reset PLL after clock config change
     codec.pll_cfg2().modify(|w| w.set_rstb(false));
-    delay_ms(1);
+    crate::blocking_delay_us(1_000);
     codec.pll_cfg2().modify(|w| w.set_rstb(true));
-    delay_us(50);
+    crate::blocking_delay_us(50);
 
     // ===== ADC1 analog power-up =====
     // CRITICAL: Use modify() to preserve bootloader-calibrated bias fields
@@ -206,26 +224,26 @@ pub(crate) fn init_codec_adc(volume: u8) {
     codec.adc1_cfg1().modify(|w| w.set_fsp(0));
     codec.adc1_cfg1().modify(|w| w.set_vcmst(true));
     codec.adc1_cfg2().modify(|w| w.set_clear(true));
-    codec.adc1_cfg1().modify(|w| w.set_gc(4)); // 18dB PGA gain
+    codec.adc1_cfg1().modify(|w| w.set_gc(PGA_GAIN_18DB));
     codec.adc1_cfg1().modify(|w| {
         w.set_dacn_en(false);
         w.set_diff_en(false);
     });
     codec.adc1_cfg2().modify(|w| w.set_en(true));
     codec.adc1_cfg2().modify(|w| w.set_rstb(false)); // hold in reset
-    codec.adc1_cfg1().modify(|w| w.set_vref_sel(2));
+    codec.adc1_cfg1().modify(|w| w.set_vref_sel(ADC_VREF_SEL));
 
     // ADC2 analog power-up (same sequence)
     codec.adc2_cfg1().modify(|w| w.set_fsp(0));
     codec.adc2_cfg1().modify(|w| w.set_vcmst(true));
     codec.adc2_cfg2().modify(|w| w.set_clear(true));
-    codec.adc2_cfg1().modify(|w| w.set_gc(4)); // 18dB PGA gain
+    codec.adc2_cfg1().modify(|w| w.set_gc(PGA_GAIN_18DB));
     codec.adc2_cfg2().modify(|w| w.set_en(true));
     codec.adc2_cfg2().modify(|w| w.set_rstb(false));
-    codec.adc2_cfg1().modify(|w| w.set_vref_sel(2));
+    codec.adc2_cfg1().modify(|w| w.set_vref_sel(ADC_VREF_SEL));
 
     // Wait 20ms for analog settling
-    delay_ms(20);
+    crate::blocking_delay_us(20_000);
 
     // Release reset, clear VCMST and CLEAR
     codec.adc1_cfg2().modify(|w| w.set_rstb(true));
@@ -240,11 +258,11 @@ pub(crate) fn init_codec_adc(volume: u8) {
 
     // ADC_CFG: normal mode (op_mode=0, data → AUDPRC RX)
     codec.adc_cfg().write(|w| {
-        w.set_osr_sel(0); // OSR = 200 (oversampling ratio)
-        w.set_op_mode(0); // normal mode → AUDPRC internal bus
+        w.set_osr_sel(ADC_OSR_200);
+        w.set_op_mode(OP_MODE_INTERNAL_BUS);
         w.set_path_reset(false);
         w.set_clk_src_sel(false); // XTAL 48MHz master clock
-        w.set_clk_div(5); // 48MHz / (5+1) = 8MHz ADC clock
+        w.set_clk_div(ADC_CLK_DIV);
     });
 
     let vol = volume.min(15);
@@ -253,7 +271,7 @@ pub(crate) fn init_codec_adc(volume: u8) {
     codec.adc_ch0_cfg().write(|w| {
         w.set_enable(true);
         w.set_hpf_bypass(false);
-        w.set_hpf_coef(0x7);
+        w.set_hpf_coef(ADC_HPF_COEF);
         w.set_stb_inv(false);
         w.set_dma_en(false); // data goes via AUDPRC, not APB
         w.set_rough_vol(vol);
@@ -265,7 +283,7 @@ pub(crate) fn init_codec_adc(volume: u8) {
     codec.adc_ch1_cfg().write(|w| {
         w.set_enable(true);
         w.set_hpf_bypass(false);
-        w.set_hpf_coef(0x7);
+        w.set_hpf_coef(ADC_HPF_COEF);
         w.set_stb_inv(false);
         w.set_dma_en(false);
         w.set_rough_vol(vol);
