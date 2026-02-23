@@ -38,10 +38,10 @@ const BM_SEARCH_STEP: u8 = 0x8;
 pub(super) const TMXCAP_DEFAULT: u32 = 6;
 
 /// GPADC conversion width for OSLO calibration.
-const GPADC_CONV_WIDTH: u16 = 252;
+const GPADC_CONV_WIDTH: u8 = 252;
 
 /// GPADC sampling width for OSLO calibration.
-const GPADC_SAMP_WIDTH: u16 = 239;
+const GPADC_SAMP_WIDTH: u32 = 239;
 
 /// GPADC data sampling delay for OSLO calibration.
 const GPADC_SAMP_DLY: u8 = 7;

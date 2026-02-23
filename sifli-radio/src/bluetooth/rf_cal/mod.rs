@@ -10,7 +10,7 @@
 //! Based on SDK `bt_rf_cal()` and related functions in `bt_rf_fulcal.c`.
 
 mod consts;
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 mod edr_lo;
 mod opt;
 pub mod rfc_cmd;
@@ -318,9 +318,9 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     rf_dump_checkpoint("AFTER_VCO_CAL");
 
     // SDK:5078 bt_ful_cal — step b: bt_rfc_edrlo_3g_cal()
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
     let edr_lo_result = edr_lo::edr_lo_cal_full();
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
     {
         debug!(
             "EDR LO cal: ch[0] fc={} bm={}, ch[39] fc={} bm={}",
@@ -356,7 +356,7 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     let txdc_table_addr = rfc_tables::store_vco_cal_tables(cmd_end_addr, &vco_cal);
 
     // Overwrite BT TX table with EDR LO results (idac, capcode, oslo_fc, oslo_bm, dpsk_gain)
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
     rfc_tables::store_edr_lo_cal_tables(&edr_lo_result);
 
     let mut txdc_config = txdc::TxdcCalConfig::default();

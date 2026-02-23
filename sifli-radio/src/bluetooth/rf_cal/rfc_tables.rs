@@ -5,12 +5,12 @@
 //! TXDC parameters (via `RD_DCCAL1`/`RD_DCCAL2`) from tables addressed by
 //! `CAL_ADDR_REG1/2/3`.
 
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 use super::edr_lo::{DPSK_GAIN_INITIAL, EdrLoCalResult};
 use super::txdc::{NUM_POWER_LEVELS, TxdcCalResult};
 use super::vco::VcoCalResult;
 use crate::pac::BT_RFC;
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 use rwbt::rfc::sifli::cal_table::pack_edr_cal;
 use rwbt::rfc::sifli::cal_table::{pack_txdc, pack_vco_rx_half, pack_vco_rx_word, pack_vco_tx};
 
@@ -175,7 +175,7 @@ pub fn store_txdc_cal_tables(
 /// - [24:20] brf_oslo_bm_lv
 /// - [27:25] dpsk_gain bits 4:2
 /// - [31:28] brf_trf_edr_tmxcap_sel_lv (default 6)
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 pub fn store_edr_lo_cal_tables(edr_lo: &EdrLoCalResult) {
     let base = super::BT_RFC_MEM_BASE;
     let bt_tx_addr = BT_RFC.cal_addr_reg2().read().bt_tx_cal_addr() as u32;
