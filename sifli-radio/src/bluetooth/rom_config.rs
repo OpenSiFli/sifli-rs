@@ -24,7 +24,21 @@ struct RomControlBlock {
     hcpu_ipc_addr: u32,
 }
 
+/// `bit_valid` field bits for `BtRomConfig`.
+/// SDK: `middleware/bluetooth/include/rom_config.h`
+pub(crate) mod bit {
+    pub const CONTROLLER_ENABLE: u32 = 1 << 1;
+    pub const LLD_PROG_DELAY: u32 = 1 << 2;
+    pub const SLEEP_MODE: u32 = 1 << 4;
+    pub const SLEEP_ENABLED: u32 = 1 << 5;
+    pub const XTAL_ENABLED: u32 = 1 << 6;
+    pub const RC_CYCLE: u32 = 1 << 7;
+    pub const IS_FPGA: u32 = 1 << 10;
+}
+
 /// BT/BLE specific configuration (A4+).
+///
+/// SDK: `hal_lcpu_bluetooth_rom_config_t` in `bf0_hal_lcpu_config.h:197`.
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 pub(crate) struct BtRomConfig {
@@ -43,6 +57,47 @@ pub(crate) struct BtRomConfig {
     pub(crate) en_inq_filter: u8,
     pub(crate) support_3m: u8,
     pub(crate) sco_cfg: u8,
+}
+
+impl BtRomConfig {
+    /// Construct BtRomConfig from ControllerConfig.
+    ///
+    /// Single source of truth for BLE controller parameters.
+    /// Used by both Letter (pre-boot) and A3 (post-boot) paths.
+    pub(crate) fn from_controller(config: &ControllerConfig) -> Self {
+        Self {
+            bit_valid: bit::CONTROLLER_ENABLE
+                | bit::LLD_PROG_DELAY
+                | bit::SLEEP_MODE
+                | bit::SLEEP_ENABLED
+                | bit::XTAL_ENABLED
+                | bit::RC_CYCLE,
+            controller_enable_bit: 0x03,
+            lld_prog_delay: config.lld_prog_delay,
+            default_sleep_mode: 0,
+            default_sleep_enabled: config.pm_enabled as u8,
+            default_xtal_enabled: config.xtal_enabled as u8,
+            default_rc_cycle: config.rc_cycle,
+            ..Default::default()
+        }
+    }
+
+    /// Write fields to an existing BtRomConfig in shared memory.
+    ///
+    /// Writes each field individually with `write_volatile` for fine-grained
+    /// shared memory access. OR's `bit_valid` to preserve existing flags.
+    pub(crate) unsafe fn apply_to(&self, target: *mut BtRomConfig) {
+        let t = &mut *target;
+        ptr::write_volatile(&mut t.controller_enable_bit, self.controller_enable_bit);
+        ptr::write_volatile(&mut t.lld_prog_delay, self.lld_prog_delay);
+        ptr::write_volatile(&mut t.default_sleep_mode, self.default_sleep_mode);
+        ptr::write_volatile(&mut t.default_sleep_enabled, self.default_sleep_enabled);
+        ptr::write_volatile(&mut t.default_xtal_enabled, self.default_xtal_enabled);
+        ptr::write_volatile(&mut t.default_rc_cycle, self.default_rc_cycle);
+
+        let old_valid = ptr::read_volatile(&t.bit_valid);
+        ptr::write_volatile(&mut t.bit_valid, old_valid | self.bit_valid);
+    }
 }
 
 impl RomControlBlock {
@@ -93,17 +148,8 @@ pub(crate) fn write(config: &RomConfig, ctrl: &ControllerConfig) {
                 RomControlBlock::HCPU2LCPU_MB_CH1_BUF_START_ADDR as u32,
             );
 
-            let bt_cfg = BtRomConfig {
-                bit_valid: (1 << 10) | (1 << 7) | (1 << 6) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1),
-                controller_enable_bit: 0x03,
-                lld_prog_delay: ctrl.lld_prog_delay,
-                default_sleep_mode: 0,
-                default_sleep_enabled: ctrl.sleep_enabled as u8,
-                default_xtal_enabled: ctrl.xtal_enabled as u8,
-                default_rc_cycle: ctrl.rc_cycle,
-                is_fpga: 0,
-                ..Default::default()
-            };
+            let mut bt_cfg = BtRomConfig::from_controller(ctrl);
+            bt_cfg.bit_valid |= bit::IS_FPGA;
             ptr::write_volatile(&mut block.bt_config, bt_cfg);
 
             if let Some(ref em) = config.em_config {

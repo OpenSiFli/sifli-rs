@@ -1,51 +1,60 @@
 //! BLE configuration types.
 //!
-//! User-facing configuration for ROM parameters, Exchange Memory layout,
-//! BLE/BT activity limits, and controller runtime parameters.
+//! User-facing configuration via [`BleInitConfig`] builder pattern.
+//! Advanced users can customize [`EmConfig`] and [`ActConfig`] for
+//! Exchange Memory layout and activity limits.
 
 /// BLE controller runtime parameters.
 ///
 /// Applied after LCPU boot to configure BLE scheduling and timing.
+/// Not user-facing — configured via [`BleInitConfig`] builders.
 #[derive(Debug, Clone, Copy)]
 pub struct ControllerConfig {
-    /// Link Layer Driver programming delay (625us slots).
-    pub lld_prog_delay: u8,
-    /// Whether external 32kHz crystal (LXT) is enabled for BLE sleep timing.
-    pub xtal_enabled: bool,
-    /// RC oscillator cycle count for BLE sleep timing.
-    pub rc_cycle: u8,
-    /// Enable BLE controller sleep between radio events.
-    pub sleep_enabled: bool,
+    /// Link Layer Driver programming delay (625us slots). SDK default: 3.
+    pub(crate) lld_prog_delay: u8,
+    /// Whether LXT is used for BLE sleep timing. Follows `RomConfig::enable_lxt`.
+    pub(crate) xtal_enabled: bool,
+    /// RC oscillator cycle count for BLE sleep timing. SDK default: 20.
+    pub(crate) rc_cycle: u8,
+    /// Enable BLE power management (idle hook, sleep scheduling, LP clock).
+    pub(crate) pm_enabled: bool,
 }
 
-impl Default for ControllerConfig {
-    fn default() -> Self {
+impl ControllerConfig {
+    pub(crate) const fn new() -> Self {
         Self {
             lld_prog_delay: 3,
-            xtal_enabled: false,
+            xtal_enabled: true, // matches RomConfig.enable_lxt default
             rc_cycle: 20,
-            sleep_enabled: false,
+            pm_enabled: false,
         }
     }
 }
 
-/// User-configurable ROM parameters.
+impl Default for ControllerConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// ROM boot parameters written to LCPU shared memory before boot.
+/// Not user-facing — configured via [`BleInitConfig`] builders.
 #[derive(Debug, Clone, Copy)]
 pub struct RomConfig {
     /// Watchdog timeout (in seconds, default 10).
-    pub wdt_time: u32,
-    /// Watchdog clock frequency (Hz, default 32768).
-    pub wdt_clk: u16,
+    pub(crate) wdt_time: u32,
+    /// Watchdog clock frequency (Hz). Always 32768.
+    pub(crate) wdt_clk: u16,
     /// Enable external low-speed crystal (default true).
-    pub enable_lxt: bool,
+    pub(crate) enable_lxt: bool,
     /// BLE Exchange Memory buffer layout (Letter Series only).
-    pub em_config: Option<EmConfig>,
+    pub(crate) em_config: Option<EmConfig>,
     /// BLE/BT activity configuration (Letter Series only).
-    pub act_config: Option<ActConfig>,
+    pub(crate) act_config: Option<ActConfig>,
 }
 
-impl Default for RomConfig {
-    fn default() -> Self {
+impl RomConfig {
+    pub(crate) const fn new() -> Self {
         Self {
             wdt_time: 10,
             wdt_clk: 32_768,
@@ -53,6 +62,12 @@ impl Default for RomConfig {
             em_config: Some(EmConfig::DEFAULT),
             act_config: Some(ActConfig::DEFAULT),
         }
+    }
+}
+
+impl Default for RomConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -125,23 +140,17 @@ impl Default for ActConfig {
 }
 
 /// BLE-specific configuration (post-boot controller params + BD address).
+/// Not user-facing — configured via [`BleInitConfig`] builders.
 #[derive(Debug, Clone, Copy)]
 pub struct BleConfig {
-    /// BLE controller runtime parameters.
-    pub controller: ControllerConfig,
-    /// Public BD address.
-    pub bd_addr: [u8; 6],
+    pub(crate) controller: ControllerConfig,
+    pub(crate) bd_addr: [u8; 6],
 }
 
 impl BleConfig {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
-            controller: ControllerConfig {
-                lld_prog_delay: 3,
-                xtal_enabled: false,
-                rc_cycle: 20,
-                sleep_enabled: false,
-            },
+            controller: ControllerConfig::new(),
             bd_addr: [0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD],
         }
     }
@@ -155,11 +164,9 @@ impl Default for BleConfig {
 
 /// Patch data (entry list + code binary).
 #[derive(Debug, Clone, Copy)]
-pub struct PatchData {
-    /// Patch entry list array.
-    pub list: &'static [u8],
-    /// Patch code bytes.
-    pub bin: &'static [u8],
+pub(crate) struct PatchData {
+    pub(crate) list: &'static [u8],
+    pub(crate) bin: &'static [u8],
 }
 
 /// Firmware binary data for LCPU.
@@ -176,41 +183,30 @@ mod sf32lb52x_lcpu_data {
 
 /// Complete BLE initialization configuration.
 ///
+/// Use builder methods to customize. Internal fields are not directly accessible.
+///
 /// # Example
 ///
 /// ```ignore
 /// use sifli_radio::bluetooth::BleInitConfig;
-/// let config = BleInitConfig::default().sleep_enabled(true);
+/// let config = BleInitConfig::default().pm_enabled(true);
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BleInitConfig {
-    /// ROM parameters.
-    pub rom: RomConfig,
-    /// BLE controller runtime parameters + BD address.
-    pub ble: BleConfig,
-    /// Patch data for A3 and earlier.
-    pub patch_a3: Option<PatchData>,
-    /// Patch data for Letter Series (A4/B4).
-    pub patch_letter: Option<PatchData>,
-    /// LCPU firmware image bytes (needed for A3 and earlier).
-    pub firmware: Option<&'static [u8]>,
-    /// Disable RF calibration.
-    pub disable_rf_cal: bool,
-    /// Skip LPSYS HCLK frequency check during image loading.
-    pub skip_frequency_check: bool,
+    pub(crate) rom: RomConfig,
+    pub(crate) ble: BleConfig,
+    pub(crate) patch_a3: Option<PatchData>,
+    pub(crate) patch_letter: Option<PatchData>,
+    pub(crate) firmware: Option<&'static [u8]>,
+    pub(crate) disable_rf_cal: bool,
+    pub(crate) skip_frequency_check: bool,
 }
 
 impl BleInitConfig {
-    /// Create a new config with all options unset.
+    /// Create a new config with defaults (no firmware/patch data).
     pub const fn new() -> Self {
         Self {
-            rom: RomConfig {
-                wdt_time: 10,
-                wdt_clk: 32_768,
-                enable_lxt: true,
-                em_config: Some(EmConfig::DEFAULT),
-                act_config: Some(ActConfig::DEFAULT),
-            },
+            rom: RomConfig::new(),
             ble: BleConfig::new(),
             patch_a3: None,
             patch_letter: None,
@@ -226,19 +222,36 @@ impl BleInitConfig {
         self
     }
 
-    /// Enable or disable BLE controller sleep between radio events.
-    pub const fn sleep_enabled(mut self, enabled: bool) -> Self {
-        self.ble.controller.sleep_enabled = enabled;
+    /// Enable or disable BLE power management.
+    pub const fn pm_enabled(mut self, enabled: bool) -> Self {
+        self.ble.controller.pm_enabled = enabled;
         self
     }
 
-    /// Disable RF calibration.
+    /// Enable or disable external low-speed crystal (LXT).
+    ///
+    /// When enabled (default), LXT is used for BLE sleep timing (more accurate).
+    /// When disabled, RC oscillator is used instead.
+    /// Depends on board hardware — set to `false` if no 32kHz crystal is present.
+    pub const fn enable_lxt(mut self, enable: bool) -> Self {
+        self.rom.enable_lxt = enable;
+        self.ble.controller.xtal_enabled = enable;
+        self
+    }
+
+    /// Set LCPU watchdog timeout in seconds (default 10).
+    pub const fn wdt_time(mut self, seconds: u32) -> Self {
+        self.rom.wdt_time = seconds;
+        self
+    }
+
+    /// Disable RF calibration (for faster startup during development).
     pub const fn disable_rf_cal(mut self, disable: bool) -> Self {
         self.disable_rf_cal = disable;
         self
     }
 
-    /// Skip LPSYS HCLK frequency check during image loading.
+    /// Skip LPSYS HCLK frequency check during firmware loading.
     pub const fn skip_frequency_check(mut self, skip: bool) -> Self {
         self.skip_frequency_check = skip;
         self

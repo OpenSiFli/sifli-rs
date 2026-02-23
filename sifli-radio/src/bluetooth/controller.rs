@@ -7,7 +7,7 @@
 //! - Sleep timing parameters (`ble_xtal_less_init()`, `bluetooth.c:79`)
 //! - MAC baseband clock (`HAL_RCC_SetMacFreq()`, `bluetooth.c:652`)
 //! - CFO phase tracking via PTC2 (`rf_ptc_config()`, `bluetooth_misc.c:356`)
-//! - BLE sleep: idle hook + LP ref cycle (`bluetooth_pm_init()`, `bluetooth.c:326`)
+//! - BLE power management: idle hook + LP ref cycle (`bluetooth_pm_init()`, `bluetooth.c:333`)
 //!
 //! ## SDK `bluetooth_pm_init()` coverage (`bluetooth.c:333`)
 //!
@@ -30,17 +30,6 @@ mod addr {
     pub const G_ROM_CONFIG_A3: *mut BtRomConfig = crate::memory_map::a3::G_ROM_CONFIG as _;
 }
 
-/// `g_rom_config.bit_valid` field bits.
-/// SDK: `middleware/bluetooth/include/rom_config.h`
-mod bit {
-    pub const CONTROLLER_ENABLE: u32 = 1 << 1;
-    pub const LLD_PROG_DELAY: u32 = 1 << 2;
-    pub const SLEEP_MODE: u32 = 1 << 4;
-    pub const SLEEP_ENABLED: u32 = 1 << 5;
-    pub const XTAL_ENABLED: u32 = 1 << 6;
-    pub const RC_CYCLE: u32 = 1 << 7;
-}
-
 const PTC_LCPU_BT_PKTDET: u8 = 105;
 const CFO_PHASE_ADDR: u32 = crate::memory_map::rf::CFO_PHASE_ADDR;
 /// `sizeof(cfo_phase_t)` = 10 bytes: `{ cfo_phase[2]: u32, cnt: u16 }`
@@ -58,20 +47,33 @@ pub(crate) fn init(config: &ControllerConfig) {
     configure_mac_clock();
     setup_cfo_tracking();
 
-    if config.sleep_enabled {
-        enable_ble_sleep();
-        register_idle_hook();
-        configure_lp_ref_cycle(config);
-        // TODO: SDK `bluetooth_pm_init()` also does:
-        //   - `rt_pm_override_mode_select(bluetooth_select_pm_mode)` — bluetooth.c:343
-        //     Selects IDLE/DEEP/STANDBY based on tick + bluetooth_stack_suspend() result.
-        //     Needed for HCPU-side deep sleep coordination.
-        //   - `rt_pm_device_register(&g_ble_mac_dev, &g_ble_mac_pm_ops)` — bluetooth.c:340
-        //     Registers bluetooth_pm_suspend() callback so PM framework can ask
-        //     "is BLE stack ready to sleep?" before entering system-level sleep.
+    if config.pm_enabled {
+        pm_init(config);
     } else {
         disable_ble_sleep();
     }
+}
+
+/// Initialize BLE power management.
+///
+/// SDK: `bluetooth_pm_init()` in `bluetooth.c:333`.
+///
+/// Enables LCPU low-power sleep between radio events:
+/// - Opens sleep gate (`LPSYS_AON.RESERVE0 = 0`)
+/// - Registers `_rwip_sleep` as idle hook so ROM idle loop calls sleep scheduling
+/// - Writes LP clock reference cycle to fix ROM division-by-zero bug
+///
+/// TODO: SDK also does:
+/// - `rt_pm_device_register()` — `bluetooth.c:340`
+///   Registers `bluetooth_pm_suspend()` callback so PM framework can ask
+///   "is BLE stack ready to sleep?" before entering system-level sleep.
+/// - `rt_pm_override_mode_select()` — `bluetooth.c:343`
+///   Selects IDLE/DEEP/STANDBY based on tick + `bluetooth_stack_suspend()` result.
+///   Needed for HCPU-side deep sleep coordination.
+fn pm_init(config: &ControllerConfig) {
+    enable_ble_sleep();
+    register_idle_hook();
+    configure_lp_ref_cycle(config);
 }
 
 /// Configure sleep timing parameters in LCPU shared memory.
@@ -95,25 +97,8 @@ fn configure_sleep_timing(config: &ControllerConfig) {
         );
 
         // SDK: `rom_config_set_default_*()` series — bluetooth.c:86-97
-        let cfg_ptr = addr::G_ROM_CONFIG_A3;
         unsafe {
-            let cfg = &mut *cfg_ptr;
-            core::ptr::write_volatile(&mut cfg.controller_enable_bit, 0x03);
-            core::ptr::write_volatile(&mut cfg.lld_prog_delay, config.lld_prog_delay);
-            core::ptr::write_volatile(&mut cfg.default_sleep_mode, 0);
-            core::ptr::write_volatile(&mut cfg.default_sleep_enabled, config.sleep_enabled as u8);
-            core::ptr::write_volatile(&mut cfg.default_xtal_enabled, config.xtal_enabled as u8);
-            core::ptr::write_volatile(&mut cfg.default_rc_cycle, config.rc_cycle);
-
-            let old_valid = core::ptr::read_volatile(&cfg.bit_valid);
-            let new_valid = old_valid
-                | bit::CONTROLLER_ENABLE
-                | bit::LLD_PROG_DELAY
-                | bit::SLEEP_MODE
-                | bit::SLEEP_ENABLED
-                | bit::XTAL_ENABLED
-                | bit::RC_CYCLE;
-            core::ptr::write_volatile(&mut cfg.bit_valid, new_valid);
+            BtRomConfig::from_controller(config).apply_to(addr::G_ROM_CONFIG_A3);
         }
     } else {
         debug!("Controller init: Letter Series, rwip_prog_delay set via RomControlBlock");

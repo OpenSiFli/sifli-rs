@@ -2,7 +2,7 @@
 //!
 //! Provides BLE controller initialization, HCI transport, and RF calibration.
 
-pub mod config;
+pub(crate) mod config;
 pub(crate) mod controller;
 pub mod error;
 pub mod hci;
@@ -10,7 +10,7 @@ mod nvds;
 pub mod rf_cal;
 mod rom_config;
 
-pub use config::BleInitConfig;
+pub use config::{ActConfig, BleInitConfig, EmConfig};
 pub use error::BleInitError;
 pub use hci::{HciError, IpcHciTransport};
 
@@ -137,7 +137,7 @@ where
 ///     let p = sifli_hal::init(Default::default());
 ///     let controller = BleController::new(
 ///         p.LCPU, p.MAILBOX1_CH1, p.DMAC2_CH8, Irqs,
-///         &BleInitConfig::default().sleep_enabled(true),
+///         &BleInitConfig::default().pm_enabled(true),
 ///     ).await.unwrap();
 /// }
 /// ```
@@ -173,8 +173,8 @@ impl<const SLOTS: usize> BleController<SLOTS> {
         })
     }
 
-    /// Enable or disable BLE controller sleep at runtime.
-    pub fn set_sleep_enabled(&self, enabled: bool) {
+    /// Enable or disable BLE power management at runtime.
+    pub fn set_pm_enabled(&self, enabled: bool) {
         let _w = unsafe { WakeGuard::acquire() };
         sifli_hal::cortex_m_blocking_delay_us(5_000);
         if enabled {

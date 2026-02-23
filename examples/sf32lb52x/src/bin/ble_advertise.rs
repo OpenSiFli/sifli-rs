@@ -56,7 +56,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         p.MAILBOX1_CH1,
         p.DMAC2_CH8,
         Irqs,
-        &BleInitConfig::default().sleep_enabled(true),
+        &BleInitConfig::default().pm_enabled(true),
     )
     .await
     {
