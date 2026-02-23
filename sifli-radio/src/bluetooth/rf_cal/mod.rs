@@ -26,7 +26,7 @@ use crate::pac::{BT_PHY, BT_RFC};
 use crate::rcc::{lp_rfc_reset_asserted, set_lp_rfc_reset};
 
 /// RFC SRAM base address
-const BT_RFC_MEM_BASE: u32 = super::memory_map::rf::BT_RFC_MEM_BASE;
+const BT_RFC_MEM_BASE: u32 = crate::memory_map::rf::BT_RFC_MEM_BASE;
 
 /// RF driver version: v6.0.0.
 const RF_DRIVER_VERSION: u32 = 0x0006_0000;
@@ -401,7 +401,7 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
 
     // SDK:5488-5492 — save TX power params to LCPU ROM config
     let tx_pwr = encode_tx_power(max_pwr, min_pwr, init_pwr, _is_bqb);
-    crate::lcpu::ram::set_bt_tx_power(tx_pwr);
+    super::rom_config::set_bt_tx_power(tx_pwr);
 
     // Store TXDC cal tables into RFC SRAM.
     // SDK does this inside bt_rfc_txdc_cal; we do it after opt_cal for cleaner ordering.
@@ -419,9 +419,9 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     // SDK bf0_lcpu_init.c:208 — clear Exchange Memory
     unsafe {
         core::ptr::write_bytes(
-            super::memory_map::shared::EM_START as *mut u8,
+            crate::memory_map::shared::EM_START as *mut u8,
             0,
-            super::memory_map::shared::EM_SIZE,
+            crate::memory_map::shared::EM_SIZE,
         );
     }
 }

@@ -1,0 +1,50 @@
+[package]
+name = "sifli-radio"
+version = "0.1.0"
+edition = "2021"
+description = "Bluetooth radio stack for SiFli MCUs"
+categories = ["hardware-support", "embedded", "no-std"]
+keywords = ["bluetooth", "ble", "sifli", "sf32"]
+repository = "https://github.com/Ic-arbon/sifli-rs"
+homepage = "https://github.com/Ic-arbon/sifli-rs"
+license = "Apache-2.0"
+
+[dependencies]
+sifli-hal = { version = "0.1.1", path = "../sifli-hal", default-features = false, features = ["time"] }
+sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac", rev = "bc148a3" }
+
+bt-hci = { version = "0.8" }
+rwbt = { version = "0.1.0", features = ["sifli", "prebuild"] }
+
+embassy-sync = { version = "0.7" }
+embassy-futures = { version = "0.1" }
+embassy-time = { version = "0.5.0", optional = true }
+embassy-hal-internal = { version = "0.2.0", features = [
+    "cortex-m",
+    "prio-bits-3",
+] }
+
+defmt = { version = "1", optional = true }
+log = { version = "0.4.14", optional = true }
+
+cortex-m = { version = "0.7.7" }
+
+embedded-io = { version = "0.7" }
+embedded-io-async = { version = "0.7" }
+
+[features]
+default = ["sf32lb52x-lcpu", "defmt"]
+
+sf32lb52x = ["sifli-hal/sf32lb52x"]
+sf32lb52x-lcpu = ["sf32lb52x"]
+
+## Enable EDR LO 3GHz calibration (VCO3G + OSLO). Only needed for BR/EDR (classic Bluetooth).
+## BLE-only applications can skip this for faster boot.
+edr-cal = ["sf32lb52x-lcpu"]
+
+defmt = [
+    "dep:defmt",
+    "sifli-hal/defmt",
+]
+
+log = ["dep:log"]

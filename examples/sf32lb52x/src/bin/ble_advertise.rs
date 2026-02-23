@@ -23,8 +23,7 @@ use panic_probe as _;
 
 use trouble_host::prelude::*;
 
-use sifli_hal::bt_hci::BleController;
-use sifli_hal::lcpu::LcpuConfig;
+use sifli_radio::bluetooth::{BleController, BleInitConfig};
 use sifli_hal::rng::Rng;
 use sifli_hal::{bind_interrupts, ipc};
 
@@ -48,6 +47,7 @@ struct BatteryService {
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = sifli_hal::init(Default::default());
 
+    Timer::after_secs(1).await;
     info!("=== BLE Advertise Example ===");
 
     // 1. BLE startup (IPC + LCPU power-on + controller)
@@ -56,7 +56,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         p.MAILBOX1_CH1,
         p.DMAC2_CH8,
         Irqs,
-        &LcpuConfig::default().sleep_enabled(true),
+        &BleInitConfig::default().sleep_enabled(true),
     )
     .await
     {
