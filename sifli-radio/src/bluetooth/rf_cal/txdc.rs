@@ -31,10 +31,10 @@ pub const NUM_POWER_LEVELS: usize = 7;
 const DMA_SAMPLE_COUNT: usize = 512;
 
 /// PHY RX dump source address (CPU cannot read this directly, DMA only)
-const PHY_RX_DUMP_ADDR: u32 = super::super::memory_map::rf::PHY_RX_DUMP_ADDR;
+const PHY_RX_DUMP_ADDR: u32 = crate::memory_map::rf::PHY_RX_DUMP_ADDR;
 
 /// DMA buffer address in LPSYS EM memory (SDK: BT_RFC_TXDC_DMA_ADDR).
-const DMA_BUFFER_ADDR: u32 = super::super::memory_map::shared::EM_START as u32;
+const DMA_BUFFER_ADDR: u32 = crate::memory_map::shared::EM_START as u32;
 
 /// DC offset center value (11-bit DAC midpoint).
 const DC_OFFSET_CENTER: u16 = 0x7E0;
@@ -159,13 +159,15 @@ pub fn apply_txdc_cal_point(point: &TxdcCalPoint) {
 // ============================================================================
 
 /// Blocking DMA options: TCIE enabled for TCIF polling (no NVIC interrupt needed).
-const DMA_OPTS: TransferOptions = TransferOptions {
-    priority: dma::Priority::Low,
-    circular: false,
-    half_transfer_ir: false,
-    complete_transfer_ir: true,
-    interrupt_priority: crate::interrupt::Priority::P0,
-};
+fn dma_opts() -> TransferOptions {
+    let mut opts = TransferOptions::default();
+    opts.priority = dma::Priority::Low;
+    opts.circular = false;
+    opts.half_transfer_ir = false;
+    opts.complete_transfer_ir = true;
+    opts.interrupt_priority = crate::interrupt::Priority::P0;
+    opts
+}
 
 /// Read a sample from the DMA buffer at the given index.
 #[inline]
@@ -183,7 +185,7 @@ fn capture_adc_samples(ch: &mut PeripheralRef<'_, dma::AnyChannel>) {
             DMA_BUFFER_ADDR as *mut u32,
             DMA_SAMPLE_COUNT,
             Increment::Memory,
-            DMA_OPTS,
+            dma_opts(),
         )
         .blocking_wait();
     }

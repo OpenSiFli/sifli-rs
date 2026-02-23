@@ -7,11 +7,13 @@ publish = false
 [dependencies]
 sifli-hal = { version = "0.1.1", path = "../../sifli-hal", features = [
   "sf32lb52x",
-  "sf32lb52x-lcpu",
   "defmt",
   "unstable-pac",
   "time-driver-gptim2",
-  "bt-hci",
+] }
+sifli-radio = { version = "0.1.0", path = "../../sifli-radio", features = [
+  "sf32lb52x-lcpu",
+  "defmt",
 ] }
 
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }

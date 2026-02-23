@@ -5,11 +5,14 @@
 //! TXDC parameters (via `RD_DCCAL1`/`RD_DCCAL2`) from tables addressed by
 //! `CAL_ADDR_REG1/2/3`.
 
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 use super::edr_lo::{EdrLoCalResult, DPSK_GAIN_INITIAL};
 use super::txdc::{TxdcCalResult, NUM_POWER_LEVELS};
 use super::vco::VcoCalResult;
 use crate::pac::BT_RFC;
+#[cfg(feature = "edr")]
+use rwbt::rfc::sifli::cal_table::pack_edr_cal;
+use rwbt::rfc::sifli::cal_table::{pack_txdc, pack_vco_rx_half, pack_vco_rx_word, pack_vco_tx};
 
 /// Write VCO calibration tables (RX + TX) to RFC SRAM and update CAL_ADDR_REG1/REG2.
 ///
@@ -33,22 +36,22 @@ pub fn store_vco_cal_tables(cmd_end_addr: u32, vco_cal: &VcoCalResult) -> u32 {
     // === BLE RX calibration table (40 words) ===
     let ble_rx_addr = addr;
     for i in 0..40 {
-        let rx_1m = (vco_cal.capcode_rx_1m[i] as u32) | ((vco_cal.idac_rx_1m[i] as u32) << 8);
-        let rx_2m = (vco_cal.capcode_rx_2m[i] as u32) | ((vco_cal.idac_rx_2m[i] as u32) << 8);
-        write_word(&mut addr, (rx_2m << 16) | rx_1m);
+        let rx_1m = pack_vco_rx_half(vco_cal.capcode_rx_1m[i], vco_cal.idac_rx_1m[i]);
+        let rx_2m = pack_vco_rx_half(vco_cal.capcode_rx_2m[i], vco_cal.idac_rx_2m[i]);
+        write_word(&mut addr, pack_vco_rx_word(rx_1m, rx_2m));
     }
     // === BT RX calibration table (40 words, packing 79 channels as pairs) ===
     let bt_rx_addr = addr;
     for i in 0..40 {
         let ch0 = 2 * i;
         let ch1 = 2 * i + 1;
-        let lo = (vco_cal.capcode_rx_bt[ch0] as u32) | ((vco_cal.idac_rx_bt[ch0] as u32) << 8);
+        let lo = pack_vco_rx_half(vco_cal.capcode_rx_bt[ch0], vco_cal.idac_rx_bt[ch0]);
         let hi = if ch1 < 79 {
-            (vco_cal.capcode_rx_bt[ch1] as u32) | ((vco_cal.idac_rx_bt[ch1] as u32) << 8)
+            pack_vco_rx_half(vco_cal.capcode_rx_bt[ch1], vco_cal.idac_rx_bt[ch1])
         } else {
             lo // last odd channel: duplicate
         };
-        write_word(&mut addr, (hi << 16) | lo);
+        write_word(&mut addr, pack_vco_rx_word(lo, hi));
     }
     // Set CAL_ADDR_REG1
     BT_RFC.cal_addr_reg1().write(|w| {
@@ -59,18 +62,18 @@ pub fn store_vco_cal_tables(cmd_end_addr: u32, vco_cal: &VcoCalResult) -> u32 {
     // === BLE TX calibration table (79 words) ===
     let ble_tx_addr = addr;
     for i in 0..79 {
-        let word = (vco_cal.capcode_tx[i] as u32)
-            | ((vco_cal.idac_tx[i] as u32) << 8)
-            | ((vco_cal.kcal[i] as u32) << 16);
-        write_word(&mut addr, word);
+        write_word(
+            &mut addr,
+            pack_vco_tx(vco_cal.capcode_tx[i], vco_cal.idac_tx[i], vco_cal.kcal[i]),
+        );
     }
     // === BT TX calibration table (79 words) -- same as BLE TX ===
     let bt_tx_addr = addr;
     for i in 0..79 {
-        let word = (vco_cal.capcode_tx[i] as u32)
-            | ((vco_cal.idac_tx[i] as u32) << 8)
-            | ((vco_cal.kcal[i] as u32) << 16);
-        write_word(&mut addr, word);
+        write_word(
+            &mut addr,
+            pack_vco_tx(vco_cal.capcode_tx[i], vco_cal.idac_tx[i], vco_cal.kcal[i]),
+        );
     }
     // Set CAL_ADDR_REG2
     BT_RFC.cal_addr_reg2().write(|w| {
@@ -109,16 +112,16 @@ pub fn store_txdc_cal_tables(
         let m = m.min(NUM_POWER_LEVELS - 1);
         let pt = &txdc_cal.points[m];
 
-        let word1 = (pt.coef0 as u32 & 0x3FFF)
-            | (((pt.coef1 as u32) & 0x3FFF) << 14)
-            | (((tmxbuf_gc[level] as u32) & 0xF) << 28);
-        let word2 = (pt.offset_q as u32 & 0x7FF)
-            | (((edr_pa_bm[level] as u32) & 0x1F) << 11)
-            | (((pt.offset_i as u32) & 0x7FF) << 16)
-            | (((tmxbuf_gc[level] as u32) & 0xF) << 28);
-
-        write_word(&mut addr, word1);
-        write_word(&mut addr, word2);
+        let entry = pack_txdc(
+            pt.coef0,
+            pt.coef1,
+            pt.offset_i,
+            pt.offset_q,
+            tmxbuf_gc[level],
+            edr_pa_bm[level],
+        );
+        write_word(&mut addr, entry.word1);
+        write_word(&mut addr, entry.word2);
     }
     // Set CAL_ADDR_REG3
     BT_RFC.cal_addr_reg3().write(|w| {
@@ -172,35 +175,20 @@ pub fn store_txdc_cal_tables(
 /// - [24:20] brf_oslo_bm_lv
 /// - [27:25] dpsk_gain bits 4:2
 /// - [31:28] brf_trf_edr_tmxcap_sel_lv (default 6)
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 pub fn store_edr_lo_cal_tables(edr_lo: &EdrLoCalResult) {
     let base = super::BT_RFC_MEM_BASE;
     let bt_tx_addr = BT_RFC.cal_addr_reg2().read().bt_tx_cal_addr() as u32;
 
     for i in 0..79usize {
-        let mut word: u32 = 0;
-
-        // [7:0] capcode (PDX)
-        word |= edr_lo.capcode[i] as u32;
-        // [14:8] IDAC
-        word |= (edr_lo.idac[i] as u32) << 8;
-        // [18:16] OSLO FC
-        word |= (edr_lo.oslo_fc[i] as u32) << 16;
-        // [24:20] OSLO BM
-        word |= (edr_lo.oslo_bm[i] as u32) << 20;
-        // [31:28] TMXCAP
-        word |= super::edr_lo::TMXCAP_DEFAULT << 28;
-
-        // DPSK gain bits scattered across the word:
-        // SDK: d0 = (dpsk_gain[i] >> 1) & 0x1  -> bit 15
-        //      d1 = (dpsk_gain[i] >> 1) & 0x2  -> bit 19
-        //      d2 = (dpsk_gain[i] >> 1) & 0x1c -> bits 27:25
-        let dg = DPSK_GAIN_INITIAL[i] >> 1;
-        let d0 = ((dg as u32) & 0x1) << 15;
-        let d1 = ((dg as u32) & 0x2) << 18;
-        let d2 = ((dg as u32) & 0x1c) << 23;
-        word |= d0 | d1 | d2;
-
+        let word = pack_edr_cal(
+            edr_lo.capcode[i],
+            edr_lo.idac[i],
+            edr_lo.oslo_fc[i],
+            edr_lo.oslo_bm[i],
+            super::edr_lo::TMXCAP_DEFAULT as u8,
+            DPSK_GAIN_INITIAL[i],
+        );
         unsafe {
             core::ptr::write_volatile((base + bt_tx_addr + (i as u32) * 4) as *mut u32, word);
         }

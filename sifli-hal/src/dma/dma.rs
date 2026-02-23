@@ -111,11 +111,7 @@ impl ChannelState {
 pub(crate) unsafe fn init(cs: critical_section::CriticalSection) {
     crate::rcc::enable_and_reset_with_cs::<peripherals::DMAC1>(cs);
 
-    // Initialize DMAC2 if LCPU feature is enabled
-    #[cfg(feature = "sf32lb52x-lcpu")]
-    {
-        crate::rcc::enable_and_reset_with_cs::<peripherals::DMAC2>(cs);
-    }
+    crate::rcc::enable_and_reset_with_cs::<peripherals::DMAC2>(cs);
 }
 
 impl AnyChannel {

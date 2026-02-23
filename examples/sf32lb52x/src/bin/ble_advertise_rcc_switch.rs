@@ -15,8 +15,7 @@ use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_futures::select::select;
 use embassy_time::{Duration, Timer};
-use sifli_hal::bt_hci::BleController;
-use sifli_hal::lcpu::LcpuConfig;
+use sifli_radio::bluetooth::{BleController, BleInitConfig};
 use sifli_hal::rcc::{
     clocks, reconfigure_sysclk, Config as RccConfig, ConfigBuilder, Dll, DllStage, HclkPrescaler,
     PclkPrescaler, Sysclk,
@@ -94,7 +93,7 @@ async fn main(_spawner: Spawner) {
         p.MAILBOX1_CH1,
         p.DMAC2_CH8,
         Irqs,
-        &LcpuConfig::default(),
+        &BleInitConfig::default(),
     )
     .await
     {

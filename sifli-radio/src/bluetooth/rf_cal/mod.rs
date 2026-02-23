@@ -10,7 +10,7 @@
 //! Based on SDK `bt_rf_cal()` and related functions in `bt_rf_fulcal.c`.
 
 mod consts;
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 mod edr_lo;
 mod opt;
 pub mod rfc_cmd;
@@ -26,7 +26,7 @@ use crate::rcc::{lp_rfc_reset_asserted, set_lp_rfc_reset};
 use crate::Peripheral;
 
 /// RFC SRAM base address
-const BT_RFC_MEM_BASE: u32 = super::memory_map::rf::BT_RFC_MEM_BASE;
+const BT_RFC_MEM_BASE: u32 = crate::memory_map::rf::BT_RFC_MEM_BASE;
 
 /// RF driver version: v6.0.0.
 const RF_DRIVER_VERSION: u32 = 0x0006_0000;
@@ -318,9 +318,9 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     rf_dump_checkpoint("AFTER_VCO_CAL");
 
     // SDK:5078 bt_ful_cal — step b: bt_rfc_edrlo_3g_cal()
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
     let edr_lo_result = edr_lo::edr_lo_cal_full();
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
     {
         debug!(
             "EDR LO cal: ch[0] fc={} bm={}, ch[39] fc={} bm={}",
@@ -356,7 +356,7 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     let txdc_table_addr = rfc_tables::store_vco_cal_tables(cmd_end_addr, &vco_cal);
 
     // Overwrite BT TX table with EDR LO results (idac, capcode, oslo_fc, oslo_bm, dpsk_gain)
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
     rfc_tables::store_edr_lo_cal_tables(&edr_lo_result);
 
     let mut txdc_config = txdc::TxdcCalConfig::default();
@@ -401,7 +401,7 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
 
     // SDK:5488-5492 — save TX power params to LCPU ROM config
     let tx_pwr = encode_tx_power(max_pwr, min_pwr, init_pwr, _is_bqb);
-    crate::lcpu::ram::set_bt_tx_power(tx_pwr);
+    super::rom_config::set_bt_tx_power(tx_pwr);
 
     // Store TXDC cal tables into RFC SRAM.
     // SDK does this inside bt_rfc_txdc_cal; we do it after opt_cal for cleaner ordering.
@@ -419,9 +419,9 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     // SDK bf0_lcpu_init.c:208 — clear Exchange Memory
     unsafe {
         core::ptr::write_bytes(
-            super::memory_map::shared::EM_START as *mut u8,
+            crate::memory_map::shared::EM_START as *mut u8,
             0,
-            super::memory_map::shared::EM_SIZE,
+            crate::memory_map::shared::EM_SIZE,
         );
     }
 }
