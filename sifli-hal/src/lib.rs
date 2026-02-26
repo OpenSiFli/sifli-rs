@@ -24,6 +24,7 @@ pub mod ipc;
 pub mod lcdc;
 pub mod lcpu;
 pub(crate) mod lpaon;
+pub mod ram;
 pub mod mailbox;
 pub mod patch;
 pub mod pmu;

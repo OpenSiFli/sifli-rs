@@ -60,6 +60,7 @@ rand_core = { version = "0.6" }
 [build-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
+toml = { version = "0.8", features = ["parse"] }
 proc-macro2 = "1.0.93"
 quote = "1.0.38"
 regex = "1.11"
