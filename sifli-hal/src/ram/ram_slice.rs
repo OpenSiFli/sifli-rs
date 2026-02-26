@@ -71,7 +71,7 @@ impl RamSlice {
     /// Panics if `data.len() > len`.
     #[inline]
     pub fn copy_from_slice(&self, data: &[u8]) {
-        assert!(
+        debug_assert!(
             data.len() <= self.len,
             "RamSlice copy overflow: {} bytes into {} byte region",
             data.len(),
@@ -89,7 +89,7 @@ impl RamSlice {
     /// Panics if `offset + data.len() > len`.
     #[inline]
     pub fn copy_at(&self, offset: usize, data: &[u8]) {
-        assert!(
+        debug_assert!(
             offset + data.len() <= self.len,
             "RamSlice copy_at overflow: offset {} + {} bytes > len {}",
             offset,
@@ -113,7 +113,7 @@ impl RamSlice {
     /// is not aligned for `T`.
     #[inline]
     pub fn read<T: Copy>(&self, offset: usize) -> T {
-        assert!(
+        debug_assert!(
             offset + core::mem::size_of::<T>() <= self.len,
             "RamSlice read overflow: offset {} + {} bytes > len {}",
             offset,
@@ -121,7 +121,7 @@ impl RamSlice {
             self.len,
         );
         let addr = self.addr + offset;
-        assert!(
+        debug_assert!(
             addr % core::mem::align_of::<T>() == 0,
             "RamSlice: unaligned read at {:#x} (required alignment: {})",
             addr,
@@ -137,7 +137,7 @@ impl RamSlice {
     /// Panics if `offset + len > self.len`.
     #[inline]
     pub fn slice(&self, offset: usize, len: usize) -> Self {
-        assert!(
+        debug_assert!(
             offset + len <= self.len,
             "RamSlice slice overflow: offset {} + {} > len {}",
             offset,
@@ -158,7 +158,7 @@ impl RamSlice {
     /// is not aligned for `T`.
     #[inline]
     pub fn write<T: Copy>(&self, offset: usize, value: T) {
-        assert!(
+        debug_assert!(
             offset + core::mem::size_of::<T>() <= self.len,
             "RamSlice write overflow: offset {} + {} bytes > len {}",
             offset,
@@ -166,7 +166,7 @@ impl RamSlice {
             self.len,
         );
         let addr = self.addr + offset;
-        assert!(
+        debug_assert!(
             addr % core::mem::align_of::<T>() == 0,
             "RamSlice: unaligned write at {:#x} (required alignment: {})",
             addr,
