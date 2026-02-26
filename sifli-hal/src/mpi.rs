@@ -19,8 +19,7 @@ use core::arch::asm;
 
 use embassy_hal_internal::{into_ref, PeripheralRef};
 use embedded_storage::nor_flash::{
-    check_erase, check_read, check_write, ErrorType, NorFlash, NorFlashError, NorFlashErrorKind,
-    ReadNorFlash,
+    check_erase, check_write, ErrorType, NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash,
 };
 
 use crate::pac::mpi::Mpi as Regs;
@@ -316,10 +315,7 @@ fn ram_program_chunk(
     let mut idx = 0;
     while idx < data.len() {
         let take = min(4, data.len() - idx);
-        let mut word = 0u32;
-        if take > 0 {
-            word |= data[idx] as u32;
-        }
+        let mut word = data[idx] as u32;
         if take > 1 {
             word |= (data[idx + 1] as u32) << 8;
         }
@@ -582,28 +578,6 @@ fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool 
     });
 
     ok
-}
-
-/// Wait for status match flag (SMF) to be set, then clear it.
-///
-/// This is used after issuing a command sequence with CMD2 status match enabled.
-/// The hardware automatically polls the flash status register via CMD2 until
-/// the status matches the expected value (WIP=0).
-#[inline(never)]
-#[link_section = ".data.ramfunc"]
-fn wait_status_match_and_clear(regs: Regs, max_polls: u32) -> Result<(), Error> {
-    for _ in 0..max_polls {
-        if regs.sr().read().smf() {
-            // Clear status match flag and transfer complete flag
-            regs.scr().write(|w| {
-                w.set_smfc(true);
-                w.set_tcfc(true);
-            });
-            return Ok(());
-        }
-        spin_loop();
-    }
-    Err(Error::Timeout)
 }
 
 /// MPI/flash error.
@@ -956,86 +930,6 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Err(Error::Timeout)
     }
 
-    /// Issue CMD1 and automatically poll flash status via CMD2 until WIP=0.
-    ///
-    /// This method uses the MPI hardware's CMD2 + Status Match feature to automatically
-    /// poll the flash status register after issuing CMD1. The hardware continues polling
-    /// until the WIP (Write In Progress) bit clears, without CPU intervention.
-    ///
-    /// This is XIP-safe because the hardware handles the polling autonomously.
-    ///
-    /// # Arguments
-    /// * `cmd1` - The primary command opcode (e.g., page program, sector erase)
-    /// * `addr` - The flash address for CMD1
-    /// * `read_status_cmd` - The read status register command opcode (typically 0x05)
-    /// * `max_polls` - Maximum number of polls before timeout
-    #[inline(never)]
-    #[link_section = ".data.ramfunc"]
-    pub fn issue_cmd_with_status_poll(
-        &mut self,
-        cmd1: u8,
-        addr: u32,
-        read_status_cmd: u8,
-        max_polls: u32,
-    ) -> Result<(), Error> {
-        let primask = ram_irq_save_disable();
-
-        let regs = self.regs();
-
-        // Configure CMD2 for read status: instruction only, 1 byte data read
-        regs.ccr2().modify(|w| {
-            w.set_fmode(false); // read mode
-            w.set_dmode(1); // single line data
-            w.set_dcyc(0);
-            w.set_absize(0);
-            w.set_abmode(0); // no alternate bytes
-            w.set_adsize(0);
-            w.set_admode(0); // no address
-            w.set_imode(1); // single line instruction
-        });
-        regs.dlr2().write(|w| w.set_dlen(0)); // 1 byte (dlen = len - 1)
-
-        // Set status match: expect WIP=0 (status & mask == match)
-        regs.smr().write(|w| w.set_status(0)); // expect 0
-        regs.smkr().write(|w| w.set_mask(NOR_FLASH_WIP_MASK)); // mask WIP bit
-
-        // Configure CMD2 command register
-        regs.cmdr2().write(|w| w.set_cmd(read_status_cmd));
-
-        // Enable CMD2 and status match on CMD2
-        regs.cr().modify(|w| {
-            w.set_cmd2e(true);
-            w.set_sme2(true);
-        });
-
-        // Clear any pending flags
-        regs.scr().write(|w| {
-            w.set_tcfc(true);
-            w.set_smfc(true);
-        });
-
-        // Issue CMD1 - this triggers the sequence: CMD1 executes, then CMD2 polls
-        regs.ar1().write(|w| w.set_addr(addr));
-        regs.cmdr1().write(|w| w.set_cmd(cmd1));
-
-        // Wait for status match (flash ready)
-        let result = wait_status_match_and_clear(regs, max_polls);
-
-        // Disable CMD2 and status match
-        regs.cr().modify(|w| {
-            w.set_cmd2e(false);
-            w.set_sme2(false);
-        });
-        regs.scr().write(|w| {
-            w.set_smfc(true);
-            w.set_tcfc(true);
-        });
-
-        ram_irq_restore(primask);
-
-        result
-    }
-
     /// Configure command/address only, without waiting for transfer completion.
     pub fn configure_command_no_wait(&mut self, cmd: u8, addr: u32, is_cmd2: bool) {
         let regs = self.regs();
@@ -1278,13 +1172,35 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         }
 
         // Use memory-mapped read path for robustness in XIP scenarios.
-        let src = (T::code_bus_base() + start) as *const u8;
+        let base = T::code_bus_base() + start;
+        let len = bytes.len();
         let mut i = 0usize;
-        while i < bytes.len() {
+
+        // Handle unaligned head (read bytes until 4-byte aligned).
+        while i < len && (base + i) % 4 != 0 {
             // SAFETY: Bounds are checked against `capacity` above.
-            bytes[i] = unsafe { core::ptr::read_volatile(src.add(i)) };
+            bytes[i] = unsafe { core::ptr::read_volatile((base + i) as *const u8) };
             i += 1;
         }
+
+        // Bulk word-aligned reads.
+        while i + 4 <= len {
+            // SAFETY: `base + i` is 4-byte aligned and within bounds.
+            let word = unsafe { core::ptr::read_volatile((base + i) as *const u32) };
+            let wb = word.to_le_bytes();
+            bytes[i] = wb[0];
+            bytes[i + 1] = wb[1];
+            bytes[i + 2] = wb[2];
+            bytes[i + 3] = wb[3];
+            i += 4;
+        }
+
+        // Handle unaligned tail.
+        while i < len {
+            bytes[i] = unsafe { core::ptr::read_volatile((base + i) as *const u8) };
+            i += 1;
+        }
+
         Ok(())
     }
 
@@ -1390,7 +1306,6 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize> ReadNorF
     const READ_SIZE: usize = 1;
 
     fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        check_read(self, offset, bytes.len()).map_err(Error::from)?;
         self.read_bytes(offset, bytes)
     }
 
@@ -1406,12 +1321,10 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize> NorFlash
     const ERASE_SIZE: usize = ERASE_GRAN;
 
     fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        check_erase(self, from, to).map_err(Error::from)?;
         self.erase_range(from, to)
     }
 
     fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        check_write(self, offset, bytes.len()).map_err(Error::from)?;
         self.write_bytes(offset, bytes)
     }
 }
@@ -1430,6 +1343,11 @@ pub struct MpiNorPartition<
 impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
     MpiNorPartition<'d, T, WRITE_GRAN, ERASE_GRAN>
 {
+    /// Map a partition-local offset to an absolute flash offset.
+    ///
+    /// Uses `>` (not `>=`) intentionally: `offset == size` is valid for
+    /// end-of-range arguments (e.g. `to` in `erase_range`). Start offsets
+    /// with nonzero length are guarded by `ensure_region`.
     fn map_offset(&self, offset: u32) -> Result<u32, Error> {
         if offset > self.partition.size {
             return Err(Error::OutOfBounds);
@@ -1498,7 +1416,6 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize> ReadNorF
     const READ_SIZE: usize = 1;
 
     fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        check_read(self, offset, bytes.len()).map_err(Error::from)?;
         self.read_bytes(offset, bytes)
     }
 
@@ -1514,12 +1431,10 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize> NorFlash
     const ERASE_SIZE: usize = ERASE_GRAN;
 
     fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        check_erase(self, from, to).map_err(Error::from)?;
         self.erase_range(from, to)
     }
 
     fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        check_write(self, offset, bytes.len()).map_err(Error::from)?;
         self.write_bytes(offset, bytes)
     }
 }
