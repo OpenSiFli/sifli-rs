@@ -244,11 +244,6 @@ where
         .await
         .map_err(|_| sifli_hal::lcpu::LcpuError::WarmupReadError)?;
 
-    debug!(
-        "[hci] warmup header: {:02X} {:02X} {:02X}",
-        header[0], header[1], header[2]
-    );
-
     if header[0] != 0x04 {
         warn!(
             "[hci] unexpected H4 indicator in warmup: 0x{:02X}, expected 0x04",
@@ -262,14 +257,8 @@ where
         rx.read_exact(&mut params[..param_len])
             .await
             .map_err(|_| sifli_hal::lcpu::LcpuError::WarmupReadError)?;
-        debug!(
-            "[hci] warmup params ({} bytes): {:02X}",
-            param_len,
-            &params[..param_len]
-        );
     }
 
-    debug!("[hci] warmup event consumed");
     Ok(())
 }
 

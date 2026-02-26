@@ -17,6 +17,7 @@ use rwbt::rfc::sifli::regs::{
     rbb_reg3, rbb_reg5, rf_lodist_reg, rrf_reg, tbb_reg, trf_edr_reg1, trf_edr_reg2, trf_reg1,
     trf_reg2, vco_reg1, vco_reg2,
 };
+use sifli_hal::ram::RamSlice;
 
 /// Build the RXON command sequence (BLE RX startup).
 fn build_rxon() -> CmdBuilder {
@@ -767,6 +768,16 @@ fn init_inccal_timing() {
     });
 }
 
+/// Write packed RFC commands to a `RamSlice` at the given byte offset.
+///
+/// Returns the next available byte offset after the written commands.
+fn write_cmd(region: &RamSlice, cmd: &CmdBuilder, offset: u32) -> u32 {
+    for i in 0..cmd.packed_word_count() {
+        region.write::<u32>((offset as usize) + i * 4, cmd.packed_word(i));
+    }
+    offset + cmd.byte_len() as u32
+}
+
 /// Generate all RFC command sequences and write them to RFC SRAM.
 ///
 /// This is the core function that makes BLE TX/RX work. It:
@@ -778,9 +789,7 @@ fn init_inccal_timing() {
 /// Must be called after `reset_bluetooth_rf()` and the basic `rfc_init()`.
 ///
 /// Returns the next free SRAM offset after all sequences.
-pub fn generate_rfc_cmd_sequences() -> u32 {
-    let base = super::BT_RFC_MEM_BASE;
-
+pub fn generate_rfc_cmd_sequences(sram: &RamSlice) -> u32 {
     // Initialize INCCAL timing
     init_inccal_timing();
 
@@ -793,7 +802,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg1().write(|w| {
         w.set_rxon_cfg_addr(rxon_addr as u16);
     });
-    addr = unsafe { rxon.write_to_sram(base, rxon_addr) };
+    addr = write_cmd(sram, &rxon, rxon_addr);
 
     // === RXOFF ===
     let rxoff = build_rxoff();
@@ -801,7 +810,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg1().modify(|w| {
         w.set_rxoff_cfg_addr(rxoff_addr as u16);
     });
-    addr = unsafe { rxoff.write_to_sram(base, rxoff_addr) };
+    addr = write_cmd(sram, &rxoff, rxoff_addr);
 
     // === TXON ===
     let txon = build_txon();
@@ -809,7 +818,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg2().write(|w| {
         w.set_txon_cfg_addr(txon_addr as u16);
     });
-    addr = unsafe { txon.write_to_sram(base, txon_addr) };
+    addr = write_cmd(sram, &txon, txon_addr);
 
     // === TXOFF ===
     let txoff = build_txoff();
@@ -817,7 +826,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg2().modify(|w| {
         w.set_txoff_cfg_addr(txoff_addr as u16);
     });
-    addr = unsafe { txoff.write_to_sram(base, txoff_addr) };
+    addr = write_cmd(sram, &txoff, txoff_addr);
 
     // === BT_TXON ===
     let bt_txon = build_bt_txon();
@@ -825,7 +834,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg3().write(|w| {
         w.set_bt_txon_cfg_addr(bt_txon_addr as u16);
     });
-    addr = unsafe { bt_txon.write_to_sram(base, bt_txon_addr) };
+    addr = write_cmd(sram, &bt_txon, bt_txon_addr);
 
     // === BT_TXOFF ===
     let bt_txoff = build_bt_txoff();
@@ -833,7 +842,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg3().modify(|w| {
         w.set_bt_txoff_cfg_addr(bt_txoff_addr as u16);
     });
-    addr = unsafe { bt_txoff.write_to_sram(base, bt_txoff_addr) };
+    addr = write_cmd(sram, &bt_txoff, bt_txoff_addr);
 
     addr
 }

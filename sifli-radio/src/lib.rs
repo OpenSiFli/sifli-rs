@@ -13,7 +13,6 @@ pub mod bluetooth;
 pub(crate) use sifli_hal::dma;
 pub(crate) use sifli_hal::efuse;
 pub(crate) use sifli_hal::rcc;
-pub(crate) use sifli_hal::syscfg;
 pub(crate) use sifli_hal::Peripheral;
 pub(crate) use sifli_hal::cortex_m_blocking_delay_us;
 pub(crate) use sifli_hal::interrupt;
@@ -22,5 +21,5 @@ pub(crate) use sifli_hal::peripherals;
 // PAC re-export (using sifli-pac directly since sifli-hal may not expose it)
 pub(crate) use sifli_pac as pac;
 
-// Memory map re-export
-pub(crate) use sifli_hal::lcpu::memory_map;
+// Memory map: re-exports sifli-hal SRAM layout + radio-specific ROM config offsets.
+pub(crate) mod memory_map;

@@ -22,6 +22,7 @@ use bt_hci::{ControllerToHostPacket, FixedSizeValue};
 use sifli_hal::dma::Channel;
 use sifli_hal::ipc;
 use sifli_hal::lcpu::{Lcpu, LcpuError, WakeGuard};
+use sifli_hal::syscfg::ChipRevision;
 use sifli_hal::{interrupt, peripherals, Peripheral};
 use sifli_hal::{patch, rcc, syscfg};
 
@@ -33,6 +34,7 @@ use sifli_hal::{patch, rcc, syscfg};
 /// 3. Warmup event consumption + controller init
 pub(crate) async fn init_ble<R>(
     lcpu: &Lcpu,
+    rev: ChipRevision,
     config: &BleInitConfig,
     dma_ch: impl Peripheral<P = impl Channel>,
     hci_rx: &mut R,
@@ -50,56 +52,35 @@ where
     {
         let _w = unsafe { WakeGuard::acquire() };
 
-        // Reset and halt LCPU
-        debug!("Step 1: Resetting and halting LCPU");
         lcpu.reset_and_halt()?;
+        rom_config::init(rev, &config.rom, &config.ble.controller);
 
-        // Write ROM configuration
-        debug!("Step 2: Writing ROM configuration");
-        rom_config::write(&config.rom, &config.ble.controller);
-
-        // Enforce frequency limit while loading
         if !config.skip_frequency_check {
-            debug!("Step 3: Ensuring LCPU frequency ≤ 24MHz");
             rcc::ensure_safe_lcpu_frequency().map_err(|_| LcpuError::RccError)?;
         }
 
-        // Load firmware for A3 and earlier
-        let is_letter = syscfg::read_idr().revision().is_letter_series();
-        if !is_letter {
-            debug!("Step 4: Loading LCPU firmware image");
+        if let ChipRevision::A3OrEarlier(_) = rev {
             if let Some(firmware) = config.firmware {
                 lcpu.load_firmware(firmware)?;
             } else {
                 return Err(LcpuError::FirmwareMissing.into());
             }
-        } else {
-            debug!("Step 4: Skipping firmware (Letter Series)");
         }
 
-        // Configure start address
-        debug!("Step 5: Setting LCPU start vector");
         lcpu.set_start_vector_from_image();
 
-        // Install patches
-        debug!("Step 6: Installing patches");
-        let patch_data = if is_letter {
-            config.patch_letter
-        } else {
-            config.patch_a3
+        let patch_data = match rev {
+            ChipRevision::A3OrEarlier(_) => config.patch_a3,
+            _ => config.patch_letter,
         };
         if let Some(data) = patch_data {
-            patch::install(data.list, data.bin).map_err(LcpuError::from)?;
+            patch::install(rev, data.list, data.bin).map_err(LcpuError::from)?;
         }
 
-        // RF calibration
         if !config.disable_rf_cal {
-            debug!("Step 7: RF calibration");
-            rf_cal::bt_rf_cal(dma_ch);
+            rf_cal::bt_rf_cal(rev, dma_ch);
         }
 
-        // Release LCPU
-        debug!("Step 8: Releasing LCPU");
         lcpu.release()?;
     }
 
@@ -111,7 +92,7 @@ where
         hci::consume_warmup_event(hci_rx).await?;
 
         // Controller initialization
-        controller::init(&config.ble.controller);
+        controller::init(rev, &config.ble.controller);
     }
 
     Ok(())
@@ -158,13 +139,14 @@ impl<const SLOTS: usize> BleController<SLOTS> {
         >,
         config: &BleInitConfig,
     ) -> Result<Self, BleInitError> {
+        let rev = syscfg::read_idr().revision();
         let mut ipc_driver = ipc::Ipc::new(mailbox, irq, ipc::Config::default());
-        let queue = ipc_driver.open_queue(ipc::QueueConfig::qid0_hci())?;
+        let queue = ipc_driver.open_queue(ipc::QueueConfig::qid0_hci(rev))?;
         let (mut rx, tx) = queue.split();
         let lcpu = Lcpu::new(lcpu_peri);
 
         // BLE init orchestration
-        init_ble(&lcpu, config, dma_ch, &mut rx).await?;
+        init_ble(&lcpu, rev, config, dma_ch, &mut rx).await?;
 
         let transport = IpcHciTransport::from_parts(rx, tx);
         Ok(Self {
@@ -208,10 +190,7 @@ impl<const SLOTS: usize> Controller for BleController<SLOTS> {
         self.inner.write_iso_data(packet).await
     }
 
-    async fn read<'a>(
-        &self,
-        buf: &'a mut [u8],
-    ) -> Result<ControllerToHostPacket<'a>, Self::Error> {
+    async fn read<'a>(&self, buf: &'a mut [u8]) -> Result<ControllerToHostPacket<'a>, Self::Error> {
         self.inner.read(buf).await
     }
 }

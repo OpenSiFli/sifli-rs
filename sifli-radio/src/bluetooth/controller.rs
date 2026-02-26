@@ -20,21 +20,17 @@
 
 use super::config::ControllerConfig;
 use super::rom_config::BtRomConfig;
-use crate::syscfg;
+use sifli_hal::syscfg::ChipRevision;
 
 /// LCPU ROM runtime variable addresses.
 mod addr {
-    use super::BtRomConfig;
-
-    pub const RWIP_PROG_DELAY_A3: *mut u8 = crate::memory_map::a3::RWIP_PROG_DELAY as _;
-    pub const G_ROM_CONFIG_A3: *mut BtRomConfig = crate::memory_map::a3::G_ROM_CONFIG as _;
+    pub const RWIP_PROG_DELAY_A3: *mut u8 = crate::memory_map::a3_rom::RWIP_PROG_DELAY as _;
+    pub const G_ROM_CONFIG_A3: usize = crate::memory_map::a3_rom::G_ROM_CONFIG;
 }
 
 const PTC_LCPU_BT_PKTDET: u8 = 105;
 const CFO_PHASE_ADDR: u32 = crate::memory_map::rf::CFO_PHASE_ADDR;
-/// `sizeof(cfo_phase_t)` = 10 bytes: `{ cfo_phase[2]: u32, cnt: u16 }`
-/// SDK: `bluetooth_misc.c:276`
-const CFO_PHASE_SIZE: usize = 10;
+const CFO_PHASE_SIZE: usize = crate::memory_map::rf::CFO_PHASE_SIZE;
 
 use crate::pac::ptc::vals::Op as PtcOp;
 
@@ -42,13 +38,13 @@ use crate::pac::ptc::vals::Op as PtcOp;
 ///
 /// SDK: `bluetooth_init()` in `bluetooth.c:563`.
 /// Called after `ble_boot()` / warmup event consumption.
-pub(crate) fn init(config: &ControllerConfig) {
-    configure_sleep_timing(config);
+pub(crate) fn init(rev: ChipRevision, config: &ControllerConfig) {
+    configure_sleep_timing(rev, config);
     configure_mac_clock();
     setup_cfo_tracking();
 
     if config.pm_enabled {
-        pm_init(config);
+        pm_init(rev, config);
     } else {
         disable_ble_sleep();
     }
@@ -70,10 +66,10 @@ pub(crate) fn init(config: &ControllerConfig) {
 /// - `rt_pm_override_mode_select()` — `bluetooth.c:343`
 ///   Selects IDLE/DEEP/STANDBY based on tick + `bluetooth_stack_suspend()` result.
 ///   Needed for HCPU-side deep sleep coordination.
-fn pm_init(config: &ControllerConfig) {
+fn pm_init(rev: ChipRevision, config: &ControllerConfig) {
     enable_ble_sleep();
-    register_idle_hook();
-    configure_lp_ref_cycle(config);
+    register_idle_hook(rev);
+    configure_lp_ref_cycle(rev, config);
 }
 
 /// Configure sleep timing parameters in LCPU shared memory.
@@ -82,26 +78,20 @@ fn pm_init(config: &ControllerConfig) {
 /// - A3: writes `rwip_prog_delay` + `g_rom_config` fields directly in RAM.
 ///   Uses `rom_config_set_lld_prog_delay()`, `rom_config_set_default_*()`.
 /// - Letter Series: already configured via `RomControlBlock` before boot.
-fn configure_sleep_timing(config: &ControllerConfig) {
-    let is_letter = syscfg::read_idr().revision().is_letter_series();
-
-    if !is_letter {
+fn configure_sleep_timing(rev: ChipRevision, config: &ControllerConfig) {
+    if let ChipRevision::A3OrEarlier(_) = rev {
         // SDK: `rom_config_set_lld_prog_delay(3)` — bluetooth.c:97
         unsafe {
             core::ptr::write_volatile(addr::RWIP_PROG_DELAY_A3, config.lld_prog_delay);
         }
-        debug!(
-            "Controller init: rwip_prog_delay={} written to 0x{:08X}",
-            config.lld_prog_delay,
-            addr::RWIP_PROG_DELAY_A3 as usize
-        );
 
         // SDK: `rom_config_set_default_*()` series — bluetooth.c:86-97
-        unsafe {
-            BtRomConfig::from_controller(config).apply_to(addr::G_ROM_CONFIG_A3);
-        }
-    } else {
-        debug!("Controller init: Letter Series, rwip_prog_delay set via RomControlBlock");
+        // addr::G_ROM_CONFIG_A3 corresponds to SDK global `g_rom_config`
+        let bt_rom_cfg = sifli_hal::ram::RamSlice::new(
+            addr::G_ROM_CONFIG_A3,
+            core::mem::size_of::<BtRomConfig>(),
+        );
+        BtRomConfig::from_controller(config).apply(&bt_rom_cfg);
     }
 }
 
@@ -123,11 +113,6 @@ fn configure_mac_clock() {
     } else {
         rcc::config_lpsys_mac_clock(mac_div, 0x08);
     }
-    debug!(
-        "MAC clock configured: HCLK={}Hz, MACDIV={}, MACFREQ=8",
-        hclk.0,
-        mac_div.max(1)
-    );
 }
 
 /// Configure PTC2 for CFO (Carrier Frequency Offset) phase tracking.
@@ -147,9 +132,7 @@ fn setup_cfo_tracking() {
     crate::pac::LPSYS_RCC.enr1().modify(|w| w.set_ptc2(true));
 
     // SDK: `memset((void *)pt_cfo, 0, 10)` — bluetooth_misc.c:361
-    unsafe {
-        core::ptr::write_bytes(CFO_PHASE_ADDR as *mut u8, 0, CFO_PHASE_SIZE);
-    }
+    sifli_hal::ram::RamSlice::new(CFO_PHASE_ADDR as usize, CFO_PHASE_SIZE).clear();
 
     // SDK: `ptc_config(0, PTC_LCPU_BT_PKTDET, 0, 0)` — bluetooth_misc.c:335-355
     // Sets PTC2 channel: target=&cfo_phase[0], data=0, op=OR, trigger=BT_PKTDET
@@ -170,11 +153,6 @@ fn setup_cfo_tracking() {
         w.set_tcie1(true);
         w.set_teie(true);
     });
-
-    debug!(
-        "CFO tracking configured: PTC2 task1, trigger=BT_PKTDET({}), target=0x{:08X}",
-        PTC_LCPU_BT_PKTDET, CFO_PHASE_ADDR
-    );
 }
 
 /// Enable BLE controller sleep (open sleep gate).
@@ -182,13 +160,11 @@ fn setup_cfo_tracking() {
 /// SDK: `LPSYS_AON.RESERVE0 = 0` — used as sleep gate by ROM's `_rwip_sleep()`.
 pub(crate) fn enable_ble_sleep() {
     crate::pac::LPSYS_AON.reserve0().write(|w| w.set_data(0));
-    debug!("BLE sleep enabled (LPSYS_AON.RESERVE0=0)");
 }
 
 /// Disable BLE controller sleep (close sleep gate).
 pub(crate) fn disable_ble_sleep() {
     crate::pac::LPSYS_AON.reserve0().write(|w| w.set_data(1));
-    debug!("BLE sleep disabled (LPSYS_AON.RESERVE0=1)");
 }
 
 /// Register `_rwip_sleep` as idle hook to enable LCPU low-power sleep.
@@ -200,10 +176,10 @@ pub(crate) fn disable_ble_sleep() {
 /// On bare-metal (no RT-Thread), we directly replace `idle_hook_list[1]`
 /// (which ROM initializes to `bluetooth_idle_hook_func`) with the real
 /// `_rwip_sleep` function pointer, so the ROM idle loop calls sleep scheduling.
-fn register_idle_hook() {
+fn register_idle_hook(rev: ChipRevision) {
     use crate::memory_map::letter_rom;
 
-    if !syscfg::read_idr().revision().is_letter_series() {
+    if let ChipRevision::A3OrEarlier(_) = rev {
         return;
     }
 
@@ -242,15 +218,7 @@ fn register_idle_hook() {
         core::ptr::write_volatile(hook_slot, rwip_sleep_fn);
     }
 
-    let readback = unsafe { core::ptr::read_volatile(hook_slot) };
-    info!(
-        "BLE idle hook: replaced bluetooth_idle_hook_func({:#010x}) with \
-         _rwip_sleep({:#010x}) at idle_hook_list[1]({:#010x}), readback={:#010x}",
-        letter_rom::BLUETOOTH_IDLE_HOOK_FUNC,
-        rwip_sleep_fn,
-        hook_slot as usize,
-        readback,
-    );
+    info!("BLE idle hook: _rwip_sleep registered");
 }
 
 /// Write LP clock reference cycle to `rwip_env.lp_ref_cycle`.
@@ -264,10 +232,10 @@ fn register_idle_hook() {
 /// `lp_ref_cycle` to ROM config area. ROM's `HAL_LCPU_CONFIG_get(2)` reads it
 /// into `rwip_env+0x1d8`. When the value is 0, ROM skips the write.
 /// We write directly to `rwip_env+0x1d8` to bypass the ROM config indirection.
-fn configure_lp_ref_cycle(config: &ControllerConfig) {
+fn configure_lp_ref_cycle(rev: ChipRevision, config: &ControllerConfig) {
     use crate::memory_map::letter_rom;
 
-    if !syscfg::read_idr().revision().is_letter_series() {
+    if let ChipRevision::A3OrEarlier(_) = rev {
         return;
     }
 
@@ -276,7 +244,6 @@ fn configure_lp_ref_cycle(config: &ControllerConfig) {
 
     let current = unsafe { core::ptr::read_volatile(lp_ref_addr) };
     if current != 0 {
-        debug!("LP ref cycle already set: {}", current);
         return;
     }
 
@@ -287,8 +254,5 @@ fn configure_lp_ref_cycle(config: &ControllerConfig) {
         core::ptr::write_volatile(lp_ref_addr, lp_ref_cycle);
     }
 
-    info!(
-        "LP ref cycle configured: {} (rc_cycle={}, ~32kHz LP clock)",
-        lp_ref_cycle, config.rc_cycle
-    );
+    info!("LP ref cycle: {} (rc_cycle={})", lp_ref_cycle, config.rc_cycle);
 }

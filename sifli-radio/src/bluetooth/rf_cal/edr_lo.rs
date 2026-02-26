@@ -8,6 +8,7 @@
 //! needed for EDR operation and requires per-channel FC/BM calibration.
 
 use crate::pac::{BT_MAC, BT_PHY, BT_RFC, GPADC, HPSYS_CFG};
+use super::rfc_sram::RfcTable;
 
 use super::consts::*;
 use super::vco;
@@ -297,8 +298,7 @@ impl Drop for GpadcCalGuard {
 /// Returns calibration results for 79 channels.
 ///
 /// Corresponds to SDK `bt_rfc_edrlo_3g_cal()` (bt_rf_fulcal.c:3026-3655).
-pub fn edr_lo_cal_full() -> EdrLoCalResult {
-    debug!("begin EDR 3G LO fulcal");
+pub fn edr_lo_cal_full(bt_tx_table: &RfcTable) -> EdrLoCalResult {
 
     // ================================================================
     // Part A: VCO3G Frequency Calibration
@@ -504,17 +504,6 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
         w.set_brf_fkcal_cnt_en_lv(false);
     });
 
-    debug!(
-        "EDR VCO3G sweep: {} steps, capcode {}..{}",
-        sweep_num,
-        sweep_capcode[0],
-        if sweep_num > 0 {
-            sweep_capcode[sweep_num - 1]
-        } else {
-            0
-        }
-    );
-
     // --- A5: 79-channel matching ---
     let mut result = EdrLoCalResult {
         idac: [0; 79],
@@ -545,7 +534,7 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
 
     // --- Write initial VCO3G results to RFC SRAM (before OSLO overwrites fc/bm) ---
     // SDK writes initial results here with fc=3, bm=0x10, then OSLO overwrites
-    store_initial_edr_table(&result);
+    store_initial_edr_table(bt_tx_table, &result);
 
     // ================================================================
     // Part B: OSLO Calibration
@@ -759,10 +748,7 @@ pub fn edr_lo_cal_full() -> EdrLoCalResult {
 ///
 /// SDK writes these immediately after VCO3G cal with fc=3, bm=0x10.
 /// The OSLO cal loop later overwrites the same area with final fc/bm.
-fn store_initial_edr_table(result: &EdrLoCalResult) {
-    let base = super::BT_RFC_MEM_BASE;
-    let bt_tx_addr = BT_RFC.cal_addr_reg2().read().bt_tx_cal_addr() as u32;
-
+fn store_initial_edr_table(bt_tx_table: &RfcTable, result: &EdrLoCalResult) {
     for i in 0..79usize {
         let mut word: u32 = 0;
         word |= result.capcode[i] as u32; // [7:0] PDX
@@ -771,8 +757,6 @@ fn store_initial_edr_table(result: &EdrLoCalResult) {
         word |= (OSLO_BM_INITIAL as u32) << 20; // [24:20] OSLO_BM
         word |= TMXCAP_DEFAULT << 28; // [31:28] TMXCAP
 
-        unsafe {
-            core::ptr::write_volatile((base + bt_tx_addr + (i as u32) * 4) as *mut u32, word);
-        }
+        bt_tx_table.write(i, word);
     }
 }

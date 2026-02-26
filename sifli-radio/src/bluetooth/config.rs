@@ -4,6 +4,8 @@
 //! Advanced users can customize [`EmConfig`] and [`ActConfig`] for
 //! Exchange Memory layout and activity limits.
 
+use crate::memory_map::rom_config::act::valid as act_valid;
+
 /// BLE controller runtime parameters.
 ///
 /// Applied after LCPU boot to configure BLE scheduling and timing.
@@ -83,7 +85,6 @@ pub struct EmConfig {
 
 impl EmConfig {
     pub const MAX_NUM: usize = 40;
-    pub(crate) const ROM_OFFSET: usize = 32;
 
     pub const DEFAULT: Self = Self {
         is_valid: 1,
@@ -102,26 +103,15 @@ impl Default for EmConfig {
     }
 }
 
-/// BLE/BT activity configuration.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct ActConfig {
-    pub bit_valid: u32,
-    pub bt_max_acl: u8,
-    pub bt_max_sco: u8,
-    pub ble_max_act: u8,
-    pub ble_max_ral: u8,
-    pub ble_max_iso: u8,
-    pub ble_rx_desc: u8,
-    pub bt_rx_desc: u8,
-    pub bt_name_len: u8,
-}
+pub use crate::memory_map::rom_config::act::ActConfig;
 
 impl ActConfig {
-    pub(crate) const ROM_OFFSET: usize = 116;
-
     pub const DEFAULT: Self = Self {
-        bit_valid: (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4),
+        bit_valid: act_valid::BT_MAX_ACL
+            | act_valid::BT_MAX_SCO
+            | act_valid::BLE_MAX_ACT
+            | act_valid::BLE_MAX_RAL
+            | act_valid::BLE_MAX_ISO,
         bt_max_acl: 7,
         bt_max_sco: 0,
         ble_max_act: 6,

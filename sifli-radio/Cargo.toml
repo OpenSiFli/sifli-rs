@@ -14,7 +14,7 @@ sifli-hal = { version = "0.1.1", path = "../sifli-hal", default-features = false
 sifli-pac = { version = "0.2.0", git = "https://github.com/OpenSiFli/sifli-pac", rev = "bc148a3" }
 
 bt-hci = { version = "0.8" }
-rwbt = { version = "0.1.0", features = ["sifli", "prebuild"] }
+rwbt = { version = "0.1.1", features = ["sifli", "prebuild"] }
 
 embassy-sync = { version = "0.7" }
 embassy-futures = { version = "0.1" }
@@ -31,6 +31,10 @@ cortex-m = { version = "0.7.7" }
 
 embedded-io = { version = "0.7" }
 embedded-io-async = { version = "0.7" }
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = { version = "0.8", features = ["parse"] }
 
 [features]
 default = ["sf32lb52x-lcpu", "defmt"]
