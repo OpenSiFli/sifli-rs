@@ -1297,6 +1297,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         if bytes.is_empty() {
             return Ok(());
         }
+        check_write(self, offset, bytes.len()).map_err(Error::from)?;
         self.wait_ready()?;
 
         // If source data is in flash code bus region, copy to bounce buffer first
@@ -1341,9 +1342,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         if from == to {
             return Ok(());
         }
-        if to < from {
-            return Err(Error::OutOfBounds);
-        }
+        check_erase(self, from, to).map_err(Error::from)?;
         self.wait_ready()?;
         let mut addr = from;
         while addr < to {
