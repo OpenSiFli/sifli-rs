@@ -10,10 +10,11 @@
 //! Based on SDK `bt_rf_cal()` and related functions in `bt_rf_fulcal.c`.
 
 mod consts;
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 mod edr_lo;
 mod opt;
 pub mod rfc_cmd;
+pub mod rfc_sram;
 pub mod rfc_tables;
 pub mod txdc;
 mod txdc_hw;
@@ -21,12 +22,9 @@ pub mod vco;
 
 use crate::dma::Channel;
 use crate::efuse::{Bank1Calibration, Efuse};
-use crate::pac::{BT_PHY, BT_RFC};
+use crate::pac::BT_RFC;
 use crate::rcc::{lp_rfc_reset_asserted, set_lp_rfc_reset};
 use crate::Peripheral;
-
-/// RFC SRAM base address
-const BT_RFC_MEM_BASE: u32 = super::memory_map::rf::BT_RFC_MEM_BASE;
 
 /// RF driver version: v6.0.0.
 const RF_DRIVER_VERSION: u32 = 0x0006_0000;
@@ -62,18 +60,7 @@ pub fn apply_edr_power_cal(cal: &Bank1Calibration) -> Option<[u8; 8]> {
     let low = &cal.primary.low;
     let high = &cal.primary.high;
 
-    debug!(
-        "eFUSE RF params: edr_cal={} pa_bm={} dac_lsb={} tmxcap_flag={} tmxcap_00={} tmxcap_78={}",
-        low.edr_cal_done(),
-        low.pa_bm(),
-        high.dac_lsb_cnt(),
-        high.tmxcap_flag(),
-        high.tmxcap_ch00(),
-        high.tmxcap_ch78()
-    );
-
     if !low.edr_cal_done() {
-        debug!("EDR cal flag not set, skipping EDR power cal");
         return None;
     }
 
@@ -176,93 +163,6 @@ fn encode_tx_power(max: i8, min: i8, init: i8, is_bqb: u8) -> u32 {
     (is_bqb_u << 24) | (init_u << 16) | (min_u << 8) | max_u
 }
 
-/// Dump all key RF registers for comparison with SDK.
-fn rf_dump_checkpoint(name: &str) {
-    debug!("\n===== CHECKPOINT: {} =====", name);
-    debug!(
-        "CU_ADDR: R1=0x{:08X} R2=0x{:08X} R3=0x{:08X}",
-        BT_RFC.cu_addr_reg1().read().0,
-        BT_RFC.cu_addr_reg2().read().0,
-        BT_RFC.cu_addr_reg3().read().0
-    );
-    debug!(
-        "CAL_ADDR: R1=0x{:08X} R2=0x{:08X} R3=0x{:08X}",
-        BT_RFC.cal_addr_reg1().read().0,
-        BT_RFC.cal_addr_reg2().read().0,
-        BT_RFC.cal_addr_reg3().read().0
-    );
-    debug!(
-        "VCO: R1=0x{:08X} R2=0x{:08X} R3=0x{:08X}",
-        BT_RFC.vco_reg1().read().0,
-        BT_RFC.vco_reg2().read().0,
-        BT_RFC.vco_reg3().read().0
-    );
-    debug!(
-        "MISC=0x{:08X} FBDV1=0x{:08X} FBDV2=0x{:08X}",
-        BT_RFC.misc_ctrl_reg().read().0,
-        BT_RFC.fbdv_reg1().read().0,
-        BT_RFC.fbdv_reg2().read().0
-    );
-    debug!(
-        "ADC=0x{:08X} LPF=0x{:08X} PFDCP=0x{:08X}",
-        BT_RFC.adc_reg().read().0,
-        BT_RFC.lpf_reg().read().0,
-        BT_RFC.pfdcp_reg().read().0
-    );
-    debug!(
-        "TRF1=0x{:08X} TRF2=0x{:08X} TBB=0x{:08X}",
-        BT_RFC.trf_reg1().read().0,
-        BT_RFC.trf_reg2().read().0,
-        BT_RFC.tbb_reg().read().0
-    );
-    debug!(
-        "RBB1=0x{:08X} RBB2=0x{:08X} RBB4=0x{:08X}",
-        BT_RFC.rbb_reg1().read().0,
-        BT_RFC.rbb_reg2().read().0,
-        BT_RFC.rbb_reg4().read().0
-    );
-    debug!(
-        "INCCAL1=0x{:08X} INCCAL2=0x{:08X}",
-        BT_RFC.inccal_reg1().read().0,
-        BT_RFC.inccal_reg2().read().0
-    );
-    debug!(
-        "IQ_PWR1=0x{:08X} IQ_PWR2=0x{:08X}",
-        BT_RFC.iq_pwr_reg1().read().0,
-        BT_RFC.iq_pwr_reg2().read().0
-    );
-    debug!(
-        "PHY: RX_CTRL1=0x{:08X} TX_CTRL=0x{:08X}",
-        BT_PHY.rx_ctrl1().read().0,
-        BT_PHY.tx_ctrl().read().0
-    );
-    debug!(
-        "PHY: LFP_CFG=0x{:08X} HFP_CFG=0x{:08X}",
-        BT_PHY.tx_lfp_cfg().read().0,
-        BT_PHY.tx_hfp_cfg().read().0
-    );
-    debug!(
-        "PHY: IF_MOD3=0x{:08X} IF_MOD5=0x{:08X}",
-        BT_PHY.tx_if_mod_cfg3().read().0,
-        BT_PHY.tx_if_mod_cfg5().read().0
-    );
-    debug!(
-        "PHY: DEMOD1=0x{:08X} MIXER1=0x{:08X}",
-        BT_PHY.demod_cfg1().read().0,
-        BT_PHY.mixer_cfg1().read().0
-    );
-    debug!(
-        "PHY: GAUSS1=0x{:08X} GAUSS2=0x{:08X}",
-        BT_PHY.tx_gaussflt_cfg1().read().0,
-        BT_PHY.tx_gaussflt_cfg2().read().0
-    );
-    unsafe {
-        let w0 = core::ptr::read_volatile(BT_RFC_MEM_BASE as *const u32);
-        let w1 = core::ptr::read_volatile((BT_RFC_MEM_BASE + 4) as *const u32);
-        debug!("SRAM[0x000]=0x{:08X} [0x004]=0x{:08X}", w0, w1);
-    }
-}
-
 /// Perform Bluetooth RF calibration.
 ///
 /// Corresponds to SDK call chain:
@@ -283,7 +183,7 @@ fn rf_dump_checkpoint(name: &str) {
 ///   ├─ adc_resume()                  // re-init GPADC after OSLO touched it
 ///   └─ memset(EM, 0, 0x5000)         // clear Exchange Memory
 /// ```
-pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
+pub fn bt_rf_cal(rev: sifli_hal::syscfg::ChipRevision, dma_ch: impl Peripheral<P = impl Channel>) {
     // TODO: bt_is_in_BQB_mode() check (SDK:5453) — always assumes non-BQB
     // SDK:5461 — bt_rf_cal_index(): compute s_cal_enable from power range
     let (max_pwr, min_pwr, init_pwr, _is_bqb) = default_tx_power_params();
@@ -299,37 +199,24 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
 
     // SDK:5473 — bt_rfc_init(): RFC register init + 6 command sequences → addr
     vco::rfc_init();
-    let cmd_end_addr = rfc_cmd::generate_rfc_cmd_sequences();
-    rf_dump_checkpoint("AFTER_RFC_INIT");
+    let sram = rfc_sram::RfcSram::new();
+    let cmd_end_addr = rfc_cmd::generate_rfc_cmd_sequences(sram.region());
+
+    // Allocate all calibration table regions upfront.
+    // This determines table layout once; individual store functions just write data.
+    let tables = rfc_tables::alloc_cal_tables(&sram, cmd_end_addr);
 
     // SDK:5072 bt_ful_cal — step a: bt_rfc_lo_cal()
     // BLE VCO calibration: ACAL+FCAL for 79 TX / 40 RX_1M / 40 RX_2M / 79 RX_BT
     // Includes PACAL, ROSCAL (RX DC offset), RCCAL sub-steps.
     let vco_cal = vco::vco_cal_full();
-    debug!(
-        "VCO cal result: tx[0] idac={} capcode={} kcal={}, tx[39] idac={} capcode={} kcal={}",
-        vco_cal.idac_tx[0],
-        vco_cal.capcode_tx[0],
-        vco_cal.kcal[0],
-        vco_cal.idac_tx[39],
-        vco_cal.capcode_tx[39],
-        vco_cal.kcal[39],
-    );
-    rf_dump_checkpoint("AFTER_VCO_CAL");
 
     // SDK:5078 bt_ful_cal — step b: bt_rfc_edrlo_3g_cal()
-    #[cfg(feature = "edr-cal")]
-    let edr_lo_result = edr_lo::edr_lo_cal_full();
-    #[cfg(feature = "edr-cal")]
+    #[cfg(feature = "edr")]
+    let edr_lo_result = edr_lo::edr_lo_cal_full(&tables.bt_tx);
+    #[cfg(feature = "edr")]
     {
-        debug!(
-            "EDR LO cal: ch[0] fc={} bm={}, ch[39] fc={} bm={}",
-            edr_lo_result.oslo_fc[0],
-            edr_lo_result.oslo_bm[0],
-            edr_lo_result.oslo_fc[39],
-            edr_lo_result.oslo_bm[39]
-        );
-        rf_dump_checkpoint("AFTER_EDR_LO_CAL");
+        let _ = &edr_lo_result;
     }
 
     // SDK:5085-5086 bt_ful_cal — step c: LPSYS clock switch before TXDC
@@ -344,20 +231,13 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
         .ok()
         .map(|e| *e.calibration());
     let edr_pa_bm_opt = efuse_cal.as_ref().and_then(apply_edr_power_cal);
-    match &edr_pa_bm_opt {
-        Some(pa_bm) => debug!(
-            "EDR power cal applied: PA_BM=[{},{},{},{},{},{},{},{}]",
-            pa_bm[0], pa_bm[1], pa_bm[2], pa_bm[3], pa_bm[4], pa_bm[5], pa_bm[6], pa_bm[7]
-        ),
-        None => debug!("EDR power cal skipped (no eFUSE data or flag not set)"),
-    }
 
     // Store VCO cal tables first — force_tx needs CAL_ADDR to look up VCO params.
-    let txdc_table_addr = rfc_tables::store_vco_cal_tables(cmd_end_addr, &vco_cal);
+    rfc_tables::store_vco_cal_tables(&tables, &vco_cal);
 
     // Overwrite BT TX table with EDR LO results (idac, capcode, oslo_fc, oslo_bm, dpsk_gain)
-    #[cfg(feature = "edr-cal")]
-    rfc_tables::store_edr_lo_cal_tables(&edr_lo_result);
+    #[cfg(feature = "edr")]
+    rfc_tables::store_edr_lo_cal_tables(&tables, &edr_lo_result);
 
     let mut txdc_config = txdc::TxdcCalConfig::default();
     txdc_config.power_level_mask = cal_enable;
@@ -369,13 +249,6 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     //   Reads tmxcap_sel from eFUSE, fills tmxcap_sel[79] per-channel array.
 
     let txdc_cal = txdc::txdc_cal_full(edr_pa_bm_opt, cal_enable, dma_ch);
-    debug!(
-        "TXDC cal[0]: oi={} oq={} c0={} c1={}",
-        txdc_cal.points[0].offset_i,
-        txdc_cal.points[0].offset_q,
-        txdc_cal.points[0].coef0,
-        txdc_cal.points[0].coef1
-    );
 
     // Restore VCO thresholds to normal mode after TXDC cal (SDK:4664-4673)
     BT_RFC.vco_reg2().modify(|w| {
@@ -387,11 +260,9 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     BT_RFC.vco_reg1().modify(|w| {
         w.set_brf_vco_ldo_vref_lv(consts::VCO_LDO_VREF);
     });
-    rf_dump_checkpoint("AFTER_TXDC_CAL");
 
     // SDK:5477 — bt_rf_opt_cal()
     opt::bt_rf_opt_cal();
-    rf_dump_checkpoint("AFTER_OPT_CAL");
 
     // SDK:5481 — store driver version (v6.0.0)
     vco::set_driver_version(RF_DRIVER_VERSION);
@@ -400,13 +271,13 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     //   DEMOD_CFG8 BR_DEMOD_G/MU_DC/MU_ERR, DEMOD_CFG16 BR_HADAPT_EN
 
     // SDK:5488-5492 — save TX power params to LCPU ROM config
-    let tx_pwr = encode_tx_power(max_pwr, min_pwr, init_pwr, _is_bqb);
-    crate::lcpu::ram::set_bt_tx_power(tx_pwr);
+    super::rom_config::set_bt_tx_power(rev, encode_tx_power(max_pwr, min_pwr, init_pwr, _is_bqb));
 
     // Store TXDC cal tables into RFC SRAM.
     // SDK does this inside bt_rfc_txdc_cal; we do it after opt_cal for cleaner ordering.
     rfc_tables::store_txdc_cal_tables(
-        txdc_table_addr,
+        sram.region(),
+        &tables,
         &txdc_cal,
         &txdc_config.edr_pa_bm,
         &txdc_config.tmxbuf_gc,
@@ -417,11 +288,9 @@ pub fn bt_rf_cal(dma_ch: impl Peripheral<P = impl Channel>) {
     //   Not needed now (OSLO not implemented), must add when EDR LO cal is done.
 
     // SDK bf0_lcpu_init.c:208 — clear Exchange Memory
-    unsafe {
-        core::ptr::write_bytes(
-            super::memory_map::shared::EM_START as *mut u8,
-            0,
-            super::memory_map::shared::EM_SIZE,
-        );
-    }
+    sifli_hal::ram::RamSlice::new(
+        crate::memory_map::shared::EM_START,
+        crate::memory_map::shared::EM_RF_CAL_CLEAR_SIZE,
+    )
+    .clear();
 }

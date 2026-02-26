@@ -1,0 +1,376 @@
+# ROM Configuration Block Field Layout
+#
+# Format follows sram_layout.toml conventions:
+#   bank  = the config block itself (with size_a3 / size_letter variants)
+#   regions = struct fields (offset + size, like sub-regions in SRAM layout)
+#
+# SDK: lcpu_config_type_int.h, struct LCPU_CONFIG_TYPE_T.
+# Offsets are relative to ROM config base address
+# (a3::ROM_CONFIG_BASE or letter::ROM_CONFIG_BASE from sram_layout.toml).
+
+[bank]
+id       = "rom_config"
+name     = "ROM Config"
+note     = "LCPU boot parameters. A3 uses first 64B, Letter uses full 204B."
+source   = "lcpu_config_type_int.h, struct LCPU_CONFIG_TYPE_T"
+module   = "rom_config"
+size_a3  = 0x40
+size     = 0xCC
+magic    = 0x45457878
+
+[[bank.regions]]
+name    = "MAGIC"
+offset  = 0
+size    = 4
+color   = "config"
+note    = "boot magic (0x45457878)"
+source  = "uint32_t magic"
+exports = [{ name = "MAGIC" }]
+
+[[bank.regions]]
+name    = "LPCYCLE_CURR"
+offset  = 4
+size    = 4
+color   = "config"
+note    = "LP cycle current measurement"
+source  = "uint32_t lpcycle_curr"
+exports = [{ name = "LPCYCLE_CURR" }]
+
+[[bank.regions]]
+name    = "LPCYCLE_AVE"
+offset  = 8
+size    = 4
+color   = "config"
+note    = "LP cycle average"
+source  = "uint32_t lpcycle_ave"
+exports = [{ name = "LPCYCLE_AVE" }]
+
+[[bank.regions]]
+name    = "WDT_TIME"
+offset  = 12
+size    = 4
+color   = "config"
+note    = "Watchdog timeout (seconds)"
+source  = "uint32_t wdt_time"
+exports = [{ name = "WDT_TIME" }]
+
+[[bank.regions]]
+name    = "WDT_STATUS"
+offset  = 16
+size    = 4
+color   = "config"
+note    = "Watchdog status"
+source  = "uint32_t wdt_status"
+exports = [{ name = "WDT_STATUS" }]
+
+[[bank.regions]]
+name    = "BT_TXPWR"
+offset  = 20
+size    = 4
+color   = "rf_cal"
+note    = "BT TX power params"
+source  = "uint32_t bt_txpwr"
+exports = [{ name = "BT_TXPWR" }]
+
+[[bank.regions]]
+name    = "WDT_CLK"
+offset  = 24
+size    = 2
+color   = "config"
+note    = "Watchdog clock freq (Hz)"
+source  = "uint16_t wdt_clk"
+exports = [{ name = "WDT_CLK" }]
+
+[[bank.regions]]
+name    = "IS_XTAL_ENABLE"
+offset  = 26
+size    = 1
+color   = "config"
+note    = "LXT enable flag"
+source  = "uint8_t is_xtal_enable"
+exports = [{ name = "IS_XTAL_ENABLE" }]
+
+[[bank.regions]]
+name    = "IS_RCCAL_IN_L"
+offset  = 27
+size    = 1
+color   = "config"
+note    = "RC cal in LCPU flag"
+source  = "uint8_t is_rccal_in_l"
+exports = [{ name = "IS_RCCAL_IN_L" }]
+
+# 28–31: 4B padding
+
+[[bank.regions]]
+name    = "EM_BUF"
+offset  = 32
+size    = 84
+color   = "em"
+note    = "Exchange Memory buffer layout (is_valid + 40 × u16)"
+source  = "em_buf_t em_buf"
+exports = [{ name = "EM_BUF" }]
+
+[[bank.regions]]
+name         = "BT_ACT_CONFIG"
+offset       = 116
+size         = 12
+color        = "app"
+note         = "BLE/BT activity limits (ACL, SCO, RAL, ISO counts)"
+source       = "hal_lcpu_bluetooth_act_config_t bt_act_config"
+sub_module   = "act"
+rust_struct  = "ActConfig"
+rust_vis     = "pub"
+rust_derives = ["Debug", "Clone", "Copy"]
+exports      = [{ name = "BT_ACT_CONFIG" }]
+
+    # Sub-fields of ActConfig (offsets relative to BT_ACT_CONFIG).
+    # Layout: #[repr(C)] hal_lcpu_bluetooth_act_config_t
+
+    [[bank.regions.regions]]
+    name    = "bit_valid"
+    offset  = 0
+    size    = 4
+    note    = "Bitmask of valid fields"
+    source  = "uint32_t bit_valid"
+    exports = [{ name = "BIT_VALID" }]
+
+    [[bank.regions.regions]]
+    name      = "bt_max_acl"
+    offset    = 4
+    size      = 1
+    note      = "Max BT ACL connections"
+    source    = "uint8_t bt_max_acl"
+    valid_bit = 0
+    exports   = [{ name = "BT_MAX_ACL" }]
+
+    [[bank.regions.regions]]
+    name      = "bt_max_sco"
+    offset    = 5
+    size      = 1
+    note      = "Max BT SCO connections"
+    source    = "uint8_t bt_max_sco"
+    valid_bit = 1
+    exports   = [{ name = "BT_MAX_SCO" }]
+
+    [[bank.regions.regions]]
+    name      = "ble_max_act"
+    offset    = 6
+    size      = 1
+    note      = "Max BLE activities"
+    source    = "uint8_t ble_max_act"
+    valid_bit = 2
+    exports   = [{ name = "BLE_MAX_ACT" }]
+
+    [[bank.regions.regions]]
+    name      = "ble_max_ral"
+    offset    = 7
+    size      = 1
+    note      = "Max BLE RAL entries"
+    source    = "uint8_t ble_max_ral"
+    valid_bit = 3
+    exports   = [{ name = "BLE_MAX_RAL" }]
+
+    [[bank.regions.regions]]
+    name      = "ble_max_iso"
+    offset    = 8
+    size      = 1
+    note      = "Max BLE ISO channels"
+    source    = "uint8_t ble_max_iso"
+    valid_bit = 4
+    exports   = [{ name = "BLE_MAX_ISO" }]
+
+    [[bank.regions.regions]]
+    name      = "ble_rx_desc"
+    offset    = 9
+    size      = 1
+    note      = "BLE RX descriptor count"
+    source    = "uint8_t ble_rx_desc"
+    valid_bit = 5
+    exports   = [{ name = "BLE_RX_DESC" }]
+
+    [[bank.regions.regions]]
+    name      = "bt_rx_desc"
+    offset    = 10
+    size      = 1
+    note      = "BT RX descriptor count"
+    source    = "uint8_t bt_rx_desc"
+    valid_bit = 6
+    exports   = [{ name = "BT_RX_DESC" }]
+
+    [[bank.regions.regions]]
+    name      = "bt_name_len"
+    offset    = 11
+    size      = 1
+    note      = "BT device name max length"
+    source    = "uint8_t bt_name_len"
+    valid_bit = 7
+    exports   = [{ name = "BT_NAME_LEN" }]
+
+# 128–171: 44B padding (ke_mem region, unused in HAL)
+
+[[bank.regions]]
+name         = "BT_ROM_CONFIG"
+offset       = 172
+size         = 24
+color        = "app"
+note         = "BLE controller params (bit_valid + sleep/timing config)"
+source       = "hal_lcpu_bluetooth_rom_config_t bt_rom_config"
+sub_module   = "bt"
+rust_struct  = "BtRomConfig"
+rust_vis     = "pub(crate)"
+rust_derives = ["Default", "Debug", "Clone", "Copy"]
+exports      = [{ name = "BT_ROM_CONFIG" }]
+
+    # Sub-fields of BtRomConfig (offsets relative to BT_ROM_CONFIG).
+    # Layout: #[repr(C)] hal_lcpu_bluetooth_rom_config_t
+
+    # Sub-fields of BtRomConfig (offsets relative to BT_ROM_CONFIG).
+    # Layout: #[repr(C)] hal_lcpu_bluetooth_rom_config_t
+    #
+    # valid_bit = bit position in bit_valid field (SDK: rom_config.h).
+    # Fields without valid_bit have no corresponding validity flag.
+
+    [[bank.regions.regions]]
+    name    = "bit_valid"
+    offset  = 0
+    size    = 4
+    note    = "Bitmask of valid fields"
+    source  = "uint32_t bit_valid"
+    exports = [{ name = "BIT_VALID" }]
+
+    [[bank.regions.regions]]
+    name      = "max_sleep_time"
+    offset    = 4
+    size      = 4
+    note      = "Max sleep duration"
+    source    = "uint32_t max_sleep_time"
+    valid_bit = 0
+    exports   = [{ name = "MAX_SLEEP_TIME" }]
+
+    [[bank.regions.regions]]
+    name      = "controller_enable_bit"
+    offset    = 8
+    size      = 1
+    note      = "BLE/BT controller enable flags"
+    source    = "uint8_t controller_enable_bit"
+    valid_bit = 1
+    exports   = [{ name = "CONTROLLER_ENABLE_BIT" }]
+
+    [[bank.regions.regions]]
+    name      = "lld_prog_delay"
+    offset    = 9
+    size      = 1
+    note      = "LLD programming delay"
+    source    = "uint8_t lld_prog_delay"
+    valid_bit = 2
+    exports   = [{ name = "LLD_PROG_DELAY" }]
+
+    [[bank.regions.regions]]
+    name      = "lld_prog_delay_min"
+    offset    = 10
+    size      = 1
+    note      = "LLD minimum programming delay"
+    source    = "uint8_t lld_prog_delay_min"
+    valid_bit = 3
+    exports   = [{ name = "LLD_PROG_DELAY_MIN" }]
+
+    [[bank.regions.regions]]
+    name      = "default_sleep_mode"
+    offset    = 11
+    size      = 1
+    note      = "Default sleep mode"
+    source    = "uint8_t default_sleep_mode"
+    valid_bit = 4
+    exports   = [{ name = "DEFAULT_SLEEP_MODE" }]
+
+    [[bank.regions.regions]]
+    name      = "default_sleep_enabled"
+    offset    = 12
+    size      = 1
+    note      = "Default sleep enabled flag"
+    source    = "uint8_t default_sleep_enabled"
+    valid_bit = 5
+    exports   = [{ name = "DEFAULT_SLEEP_ENABLED" }]
+
+    [[bank.regions.regions]]
+    name      = "default_xtal_enabled"
+    offset    = 13
+    size      = 1
+    note      = "Default XTAL enabled flag"
+    source    = "uint8_t default_xtal_enabled"
+    valid_bit = 6
+    exports   = [{ name = "DEFAULT_XTAL_ENABLED" }]
+
+    [[bank.regions.regions]]
+    name      = "default_rc_cycle"
+    offset    = 14
+    size      = 1
+    note      = "Default RC cycle count"
+    source    = "uint8_t default_rc_cycle"
+    valid_bit = 7
+    exports   = [{ name = "DEFAULT_RC_CYCLE" }]
+
+    [[bank.regions.regions]]
+    name      = "default_swprofiling_cfg"
+    offset    = 15
+    size      = 1
+    note      = "Default SW profiling config"
+    source    = "uint8_t default_swprofiling_cfg"
+    valid_bit = 8
+    exports   = [{ name = "DEFAULT_SWPROFILING_CFG" }]
+
+    [[bank.regions.regions]]
+    name      = "boot_mode"
+    offset    = 16
+    size      = 1
+    note      = "Boot mode selector"
+    source    = "uint8_t boot_mode"
+    valid_bit = 9
+    exports   = [{ name = "BOOT_MODE" }]
+
+    [[bank.regions.regions]]
+    name      = "is_fpga"
+    offset    = 17
+    size      = 1
+    note      = "FPGA flag"
+    source    = "uint8_t is_fpga"
+    valid_bit = 10
+    exports   = [{ name = "IS_FPGA" }]
+
+    [[bank.regions.regions]]
+    name      = "en_inq_filter"
+    offset    = 18
+    size      = 1
+    note      = "Inquiry filter enable"
+    source    = "uint8_t en_inq_filter"
+    valid_bit = 11
+    exports   = [{ name = "EN_INQ_FILTER" }]
+
+    [[bank.regions.regions]]
+    name      = "support_3m"
+    offset    = 19
+    size      = 1
+    note      = "3Mbps EDR support flag"
+    source    = "uint8_t support_3m"
+    valid_bit = 12
+    exports   = [{ name = "SUPPORT_3M" }]
+
+    [[bank.regions.regions]]
+    name      = "sco_cfg"
+    offset    = 20
+    size      = 1
+    note      = "SCO configuration"
+    source    = "uint8_t sco_cfg"
+    valid_bit = 13
+    exports   = [{ name = "SCO_CFG" }]
+
+# 196–199: 4B padding
+
+[[bank.regions]]
+name    = "HCPU_IPC_ADDR"
+offset  = 200
+size    = 4
+color   = "mailbox"
+note    = "HCPU→LCPU IPC mailbox address"
+source  = "uint32_t hcpu_ipc_addr"
+exports = [{ name = "HCPU_IPC_ADDR" }]

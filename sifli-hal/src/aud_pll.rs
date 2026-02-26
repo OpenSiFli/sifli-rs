@@ -371,21 +371,17 @@ impl AudioPll {
     }
 
     fn update_clocks_cache(freq: Option<AudPllFreq>) {
-        unsafe {
-            let mut clocks = *rcc::get_freqs();
-            match freq {
-                Some(f) => {
-                    let hz = f.freq();
-                    clocks.clk_aud_pll = Some(Hertz(hz)).into();
-                    clocks.clk_aud_pll_div16 = Some(Hertz(hz / 16)).into();
-                }
-                None => {
-                    clocks.clk_aud_pll = None.into();
-                    clocks.clk_aud_pll_div16 = None.into();
-                }
+        rcc::modify_freqs(|clocks| match freq {
+            Some(f) => {
+                let hz = f.freq();
+                clocks.clk_aud_pll = Some(Hertz(hz)).into();
+                clocks.clk_aud_pll_div16 = Some(Hertz(hz / 16)).into();
             }
-            rcc::set_freqs(clocks);
-        }
+            None => {
+                clocks.clk_aud_pll = None.into();
+                clocks.clk_aud_pll_div16 = None.into();
+            }
+        });
     }
 }
 

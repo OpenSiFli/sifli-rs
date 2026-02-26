@@ -14,8 +14,6 @@ mod utils;
 pub mod adc;
 pub mod aud_pll;
 pub mod audio;
-#[cfg(feature = "bt-hci")]
-pub mod bt_hci;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
 pub mod efuse;
@@ -26,6 +24,7 @@ pub mod ipc;
 pub mod lcdc;
 pub mod lcpu;
 pub(crate) mod lpaon;
+pub mod ram;
 pub mod mailbox;
 pub mod patch;
 pub mod pmu;

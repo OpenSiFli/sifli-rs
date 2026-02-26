@@ -499,17 +499,6 @@ pub fn vco_cal_full() -> VcoCalResult {
         w.set_brf_vco_fkcal_en_lv(false);
     });
 
-    debug!(
-        "VCO sweep: {} steps, capcode {}..{}",
-        sweep_num,
-        sweep_capcode[0],
-        if sweep_num > 0 {
-            sweep_capcode[sweep_num - 1]
-        } else {
-            0
-        }
-    );
-
     // ---- Channel matching ----
     let mut result = VcoCalResult {
         idac_tx: [0; 79],
@@ -602,8 +591,6 @@ pub fn vco_cal_full() -> VcoCalResult {
         } else {
             KCAL_DEFAULT_NORM
         };
-        debug!("KCAL 0-39: norm={} pmin={} pmax={}", kcal_norm, pmin, pmax);
-
         for i in 0..40usize {
             let p_delta =
                 (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[19] as i32);
@@ -657,8 +644,6 @@ pub fn vco_cal_full() -> VcoCalResult {
         } else {
             KCAL_DEFAULT_NORM
         };
-        debug!("KCAL 40-78: norm={} pmin={} pmax={}", kcal_norm, pmin, pmax);
-
         for i in 40..79usize {
             let p_delta =
                 (REF_RESIDUAL_CNT_TBL_TX[i] as i32) - (REF_RESIDUAL_CNT_TBL_TX[59] as i32);
@@ -802,8 +787,6 @@ fn pacal() {
         w.set_brf_pa_setsgn_lv(setsgn_rslt);
     });
 
-    debug!("PACAL done: bc={} sgn={}", setbc_rslt, setsgn_rslt);
-
     // Cleanup
     BT_RFC.pacal_reg().modify(|w| {
         w.set_pacal_start(false);
@@ -881,8 +864,6 @@ fn roscal() {
         w.set_dos_i_sw(dos_i);
     });
 
-    debug!("ROSCAL done: dos_i={} dos_q={}", dos_i, dos_q);
-
     // Cleanup
     BT_RFC.rbb_reg2().modify(|w| {
         w.set_brf_en_cbpf_lv(false);
@@ -948,8 +929,6 @@ fn rccal() {
         w.set_brf_cbpf_capman_lv(rc_capcode);
         w.set_brf_rccal_mancap_lv(true);
     });
-
-    debug!("RCCAL done: rc_capcode={}", rc_capcode);
 
     // Cleanup
     BT_RFC.rcroscal_reg().modify(|w| {

@@ -7,8 +7,9 @@
 //!
 //! let idr = syscfg::read_idr();
 //! let rev = idr.revision();
-//! if rev.is_letter_series() {
-//!     // Letter-series specific logic
+//! match rev {
+//!     syscfg::ChipRevision::A3OrEarlier(_) => { /* A3 path */ }
+//!     _ => { /* Letter Series path */ }
 //! }
 //! ```
 

@@ -74,6 +74,7 @@
               rust-analyzer
               cargo-binutils
               probe-rs-tools
+              python3
             ]) ++ [ sftoolPkg ];
 
             env = {

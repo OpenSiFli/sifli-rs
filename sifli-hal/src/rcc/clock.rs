@@ -21,16 +21,38 @@ static mut CLOCK_FREQS: Clocks = Clocks::ZERO;
 
 /// Sets the clock frequencies.
 ///
-/// Safety: Sets a mutable global.
+/// # Safety
+///
+/// Must be called with exclusive access to `CLOCK_FREQS` — either during
+/// single-threaded init, or inside a critical section. For read-modify-write
+/// patterns, prefer `modify_freqs()` which handles synchronization automatically.
 pub(crate) unsafe fn set_freqs(freqs: Clocks) {
     debug!("rcc: {:?}", freqs);
     unsafe { CLOCK_FREQS = freqs };
     CLOCK_FREQS_INIT.store(true, Ordering::Release);
 }
 
-/// Safety: Reads a mutable global. Must be called after `set_freqs()`.
+/// # Safety
+///
+/// The returned value is only valid while no concurrent write to
+/// `CLOCK_FREQS` is in progress. Safe to call after `set_freqs()` in
+/// read-only contexts; for read-modify-write, use `modify_freqs()`.
 pub(crate) unsafe fn get_freqs() -> &'static Clocks {
     unsafe { &*core::ptr::addr_of!(CLOCK_FREQS) }
+}
+
+/// Atomically read-modify-write the cached clock frequencies.
+///
+/// Wraps the read-modify-write in a critical section to prevent lost updates
+/// when an interrupt also modifies clocks (e.g., audio PLL vs sysclk reconfig).
+pub(crate) fn modify_freqs(f: impl FnOnce(&mut Clocks)) {
+    critical_section::with(|_| {
+        // SAFETY: Critical section guarantees exclusive access on single-core Cortex-M.
+        let mut clocks = unsafe { *core::ptr::addr_of!(CLOCK_FREQS) };
+        f(&mut clocks);
+        unsafe { CLOCK_FREQS = clocks };
+        CLOCK_FREQS_INIT.store(true, Ordering::Release);
+    });
 }
 
 /// Get the current HPSYS clock configuration.

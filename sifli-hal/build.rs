@@ -165,6 +165,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write!(file, "{}", token_stream).unwrap();
     rustfmt(&dest_path);
 
+    // Generate memory_map.rs from TOML sources.
+    generate_memory_map(&data_dir, &out_dir)?;
+
     Ok(())
 }
 
@@ -1010,6 +1013,254 @@ impl<T: Iterator> IteratorExt for T {
             },
         }
     }
+}
+
+// ── Memory map code generation from sram_layout.toml & rom_config_layout.toml ─
+
+// ── SRAM layout types ──────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct SramLayout {
+    #[serde(default)]
+    banks: Vec<SramBank>,
+}
+
+#[derive(serde::Deserialize)]
+struct SramBank {
+    #[allow(dead_code)]
+    id: String,
+    base: u64,
+    #[allow(dead_code)]
+    size: u64,
+    #[serde(default)]
+    regions: Vec<SramRegion>,
+    #[serde(default)]
+    exports: Vec<Export>,
+    #[serde(default)]
+    lcpu_view_offset: Option<u64>,
+    #[serde(default)]
+    cbus_base: Option<u64>,
+    // Fields present in TOML but unused by build.rs:
+    #[serde(default)]
+    #[allow(dead_code)]
+    visible: Option<bool>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    variant: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    name: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    note: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    source: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct SramRegion {
+    #[allow(dead_code)]
+    name: String,
+    base: u64,
+    size: u64,
+    #[serde(default)]
+    exports: Vec<Export>,
+    #[serde(default)]
+    regions: Vec<SramRegion>,
+    // Fields present in TOML but unused by build.rs:
+    #[serde(default)]
+    #[allow(dead_code)]
+    color: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    note: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    source: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct Export {
+    module: String,
+    name: String,
+    #[serde(default = "default_base")]
+    field: String,
+    #[serde(default = "default_usize")]
+    r#type: String,
+    #[serde(default)]
+    transform: Option<String>,
+}
+
+fn default_base() -> String {
+    "base".to_string()
+}
+
+fn default_usize() -> String {
+    "usize".to_string()
+}
+
+fn generate_memory_map(
+    data_dir: &Path,
+    out_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let toml_path = data_dir.join("sram_layout.toml");
+    let content = fs::read_to_string(&toml_path)?;
+    let layout: SramLayout = toml::from_str(&content)?;
+
+    // Collect constants from bank/region exports (including nested sub-regions)
+    struct Resolved {
+        module: String,
+        name: String,
+        typ: String,
+        value: u64,
+        source: String,
+    }
+
+    let mut resolved = Vec::new();
+
+    fn collect_region_exports(
+        region: &SramRegion,
+        bank: &SramBank,
+        resolved: &mut Vec<Resolved>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for exp in &region.exports {
+            let value = match exp.field.as_str() {
+                "base" => region.base,
+                "size" => region.size,
+                f => return Err(format!("unknown field '{f}' in region '{}' export", region.name).into()),
+            };
+            let value = match exp.transform.as_deref() {
+                Some("cbus") => {
+                    let cbus_base = bank.cbus_base.ok_or_else(|| {
+                        format!("export '{}' uses transform=cbus but bank '{}' has no cbus_base",
+                                exp.name, bank.id)
+                    })?;
+                    (value - bank.base) + cbus_base
+                }
+                Some(t) => return Err(format!("unknown transform '{t}' in export '{}'", exp.name).into()),
+                None => value,
+            };
+            resolved.push(Resolved {
+                module: exp.module.clone(),
+                name: exp.name.clone(),
+                typ: exp.r#type.clone(),
+                value,
+                source: String::new(),
+            });
+        }
+        // Recurse into sub-regions
+        for sub in &region.regions {
+            collect_region_exports(sub, bank, resolved)?;
+        }
+        Ok(())
+    }
+
+    // Walk banks and regions, collecting exports
+    for bank in &layout.banks {
+        for exp in &bank.exports {
+            let value = match exp.field.as_str() {
+                "base" => bank.base,
+                "size" => bank.size,
+                "lcpu_view_offset" => bank.lcpu_view_offset.ok_or_else(|| {
+                    format!("export '{}' uses field=lcpu_view_offset but bank '{}' has none",
+                            exp.name, bank.id)
+                })?,
+                f => return Err(format!("unknown field '{f}' in bank '{}' export", bank.id).into()),
+            };
+            resolved.push(Resolved {
+                module: exp.module.clone(),
+                name: exp.name.clone(),
+                typ: exp.r#type.clone(),
+                value,
+                source: String::new(),
+            });
+        }
+        for region in &bank.regions {
+            collect_region_exports(region, bank, &mut resolved)?;
+        }
+    }
+
+    // Group by module, maintaining declaration order
+    let mut modules: Vec<(&str, Vec<&Resolved>)> = Vec::new();
+    for c in &resolved {
+        if let Some((_, consts)) = modules.iter_mut().find(|(m, _)| *m == c.module) {
+            consts.push(c);
+        } else {
+            modules.push((&c.module, vec![c]));
+        }
+    }
+
+    // Module-level doc comments
+    let module_docs: std::collections::HashMap<&str, &str> = [
+        ("shared", "/// Addresses shared across all chip revisions."),
+        ("rf", "/// Bluetooth RF peripheral addresses."),
+        ("a3", "/// A3 revision specific addresses."),
+        (
+            "letter",
+            "/// Letter Series (A4/B4) specific addresses.",
+        ),
+    ]
+    .into_iter()
+    .collect();
+
+    // Generate Rust source
+    let mut out = String::from(
+        "// Generated by build.rs from sram_layout.toml — do not edit.\n\n",
+    );
+
+    for (module, consts) in &modules {
+        let doc = module_docs
+            .get(module)
+            .copied()
+            .unwrap_or("/// Module addresses.");
+        out.push_str(&format!("{doc}\npub mod {module} {{\n"));
+        for c in consts {
+            let hex = fmt_hex_build(c.value);
+            if c.source.is_empty() {
+                out.push_str(&format!(
+                    "    pub const {}: {} = {hex};\n",
+                    c.name, c.typ
+                ));
+            } else {
+                out.push_str(&format!(
+                    "    pub const {}: {} = {hex}; // {}\n",
+                    c.name, c.typ, c.source
+                ));
+            }
+        }
+        out.push_str("}\n\n");
+    }
+
+    let out_path = out_dir.join("memory_map_generated.rs");
+    fs::write(&out_path, &out)?;
+    rustfmt(&out_path);
+
+    Ok(())
+}
+
+/// Format an integer as a Rust hex literal with `_` separators.
+/// Values > 4 hex digits are zero-padded to 8 digits (address style).
+fn fmt_hex_build(value: u64) -> String {
+    if value == 0 {
+        return "0".to_string();
+    }
+    let h = format!("{value:X}");
+    let h = if h.len() > 4 {
+        format!("{value:08X}")
+    } else {
+        h
+    };
+    let mut groups = Vec::new();
+    let bytes = h.as_bytes();
+    let mut i = bytes.len();
+    while i > 0 {
+        let start = i.saturating_sub(4);
+        groups.push(&h[start..i]);
+        i = start;
+    }
+    groups.reverse();
+    format!("0x{}", groups.join("_"))
 }
 
 /// rustfmt a given path.

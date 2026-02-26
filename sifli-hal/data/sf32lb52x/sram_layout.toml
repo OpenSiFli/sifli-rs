@@ -1,0 +1,430 @@
+chip = "SF32LB52x"
+
+# ── HCPU SRAM (512KB) ──────────────────────────────────────────────────────
+
+[[banks]]
+id               = "hcpu"
+name             = "HCPU SRAM"
+note             = "512KB = RAM0(128KB) + RAM1(128KB) + RAM2(256KB). Last 1KB reserved for IPC mailbox."
+note_zh          = "512KB = RAM0(128KB) + RAM1(128KB) + RAM2(256KB)。末尾 1KB 为 IPC 邮箱。"
+source           = "mem_map.h:64-88"
+base             = 0x20000000
+size             = 0x80000
+lcpu_view_offset = 0x0A000000
+exports          = [{ module = "shared", name = "HCPU_TO_LCPU_OFFSET", field = "lcpu_view_offset" }]
+
+[[banks.regions]]
+name   = "RAM0 / DTCM"
+base   = 0x20000000
+size   = 0x20000
+color  = "dtcm"
+note   = "128KB Retention RAM (power-off retained). HCPU DTCM region."
+note_zh = "128KB，Retention RAM（掉电保持）。HCPU DTCM 区域。"
+source = "mem_map.h HPSYS_RAM0_BASE(0x20000000), HPSYS_DTCM_SIZE(128KB)"
+
+[[banks.regions]]
+name   = "RAM1"
+base   = 0x20020000
+size   = 0x20000
+color  = "app"
+note   = "128KB general-purpose SRAM."
+note_zh = "128KB 通用 SRAM。"
+source = "mem_map.h HPSYS_RAM1_BASE(0x20020000), HPSYS_RAM1_SIZE(128KB)"
+
+[[banks.regions]]
+name   = "RAM2 / Application"
+base   = 0x20040000
+size   = 0x3BB04
+color  = "app"
+note   = "~239KB application heap/stack/BSS (majority of RAM2 256KB)."
+note_zh = "~239KB，应用 heap/stack/BSS（RAM2 256KB 的大部分）。"
+source = "mem_map.h HPSYS_RAM2_BASE(0x20040000), HPSYS_RAM2_SIZE(256KB)"
+
+[[banks.regions]]
+name   = "Custom Config"
+base   = 0x2007FB04
+size   = 0xFC
+color  = "config"
+note   = "256B HCPU custom config area."
+note_zh = "256B HCPU 自定义配置区。"
+source = "mem_map.h HCPU_CUSTOM_CONFIG_START_ADDR comment 0x2007fb04, size 256B"
+
+[[banks.regions]]
+name    = "HCPU→LCPU MB CH2"
+base    = 0x2007FC00
+size    = 0x200
+color   = "mailbox"
+note    = "512B IPC mailbox, HCPU writes / LCPU reads."
+note_zh = "512B IPC 邮箱，HCPU 写 / LCPU 读。"
+source  = "mem_map.h HCPU2LCPU_MB_CH2_BUF_START_ADDR = HPSYS_RAM_END+1-1024 = 0x2007FC00"
+exports = [{ module = "shared", name = "HCPU2LCPU_MB_CH2" }]
+
+[[banks.regions]]
+name    = "HCPU→LCPU MB CH1"
+base    = 0x2007FE00
+size    = 0x200
+color   = "mailbox"
+note    = "512B IPC mailbox, HCPU writes / LCPU reads."
+note_zh = "512B IPC 邮箱，HCPU 写 / LCPU 读。"
+source  = "mem_map.h HCPU2LCPU_MB_CH1_BUF_START_ADDR = CH2_END+1 = 0x2007FE00"
+exports = [{ module = "shared", name = "HCPU2LCPU_MB_CH1" }, { module = "shared", name = "IPC_MB_BUF_SIZE", field = "size" }]
+
+# ── LCPU SRAM — A3 revision ──────────────────────────────────────────────────
+
+[[banks]]
+id      = "lcpu_a3"
+name    = "LCPU  (A3)"
+variant = "a3"
+note    = "A3: 24KB SRAM + 8KB Patch + 24KB EM + ~7KB ROM_RAM. Display range 64KB."
+note_zh = "A3：24KB SRAM + 8KB Patch + 24KB EM + ~7KB ROM_RAM。显示范围 64KB。"
+source  = "mem_map.h:93-128, memory_map.rs:a3"
+base    = 0x20400000
+size    = 0x10000
+exports = [{ module = "shared", name = "LPSYS_RAM_BASE" }]
+
+[[banks.regions]]
+name    = "Total SRAM"
+base    = 0x20400000
+size    = 0x6000
+color   = "app"
+note    = "24KB actual LCPU SRAM (Code + Heap + Mailbox)."
+source  = "mem_map.h LPSYS_RAM_SIZE(24KB)"
+exports = [{ module = "a3", name = "LPSYS_RAM_SIZE", field = "size" }]
+
+[[banks.regions]]
+name    = "RAM Code"
+base    = 0x20400000
+size    = 0x1800
+color   = "app"
+note    = "6KB LCPU code region (C-bus alias: 0x00400000)."
+note_zh = "6KB LCPU 代码区（C-bus 别名：0x00400000）。"
+source  = "mem_map.h LCPU_RAM_CODE_START_ADDR_S(0x20400000), LCPU_RAM_CODE_SIZE(6KB)"
+
+[[banks.regions]]
+name    = "Heap / Data"
+base    = 0x20401800
+size    = 0x4400
+color   = "app"
+note    = "~17KB LCPU heap, data, BSS."
+note_zh = "~17KB LCPU heap、data、BSS。"
+source  = "mem_map.h LCPU_RAM_DATA_SIZE = 24KB-1KB(mailbox)-6KB(code) = 17KB"
+
+[[banks.regions]]
+name    = "LCPU→HCPU MB CH1"
+base    = 0x20405C00
+size    = 0x200
+color   = "mailbox"
+note    = "512B IPC mailbox, LCPU writes / HCPU reads."
+note_zh = "512B IPC 邮箱，LCPU 写 / HCPU 读。"
+source  = "mem_map.h LCPU2HCPU_MB_CH1_BUF_START_ADDR = LPSYS_RAM_END-0x3FF = 0x20405C00"
+exports = [{ module = "a3", name = "LCPU2HCPU_CH1" }]
+
+[[banks.regions]]
+name    = "LCPU→HCPU MB CH2"
+base    = 0x20405E00
+size    = 0x200
+color   = "mailbox"
+note    = "512B IPC mailbox, LCPU writes / HCPU reads."
+note_zh = "512B IPC 邮箱，LCPU 写 / HCPU 读。"
+source  = "mem_map.h LCPU2HCPU_MB_CH2_BUF_START_ADDR = CH1_END+1 = 0x20405E00"
+exports = [{ module = "a3", name = "LCPU2HCPU_CH2" }]
+
+# SRAM boundary: 0x20405FFF; gap then Patch starts at 0x20406000
+
+[[banks.regions]]
+name    = "Patch  (A3)"
+base    = 0x20406000
+size    = 0x2000
+color   = "patch"
+note    = "8KB patch buffer, last 256B for patch record."
+note_zh = "8KB 补丁缓冲区，末尾 256B 为 patch record。"
+source  = "mem_map.h LCPU_PATCH_START_ADDR_S(0x20406000), LCPU_PATCH_TOTAL_SIZE(8KB)"
+exports = [{ module = "a3", name = "PATCH_CODE_START" }, { module = "a3", name = "PATCH_TOTAL_SIZE", field = "size" }]
+
+[[banks.regions.regions]]
+name    = "Patch Record"
+base    = 0x20407F00
+size    = 0x100
+note    = "Patch record table, located at last 256B of patch buffer."
+note_zh = "补丁记录表，位于 patch 缓冲区末尾 256B"
+source  = "mem_map.h LCPU_PATCH_START_ADDR_S + LCPU_PATCH_TOTAL_SIZE - 256"
+exports = [{ module = "a3", name = "PATCH_RECORD_ADDR" }, { module = "a3", name = "PATCH_RECORD_SIZE", field = "size" }]
+
+# Gap: 0x20407FFF → EM starts at 0x20408000
+
+[[banks.regions]]
+name    = "EM (Exchange Memory)"
+base    = 0x20408000
+size    = 0x6000
+color   = "em"
+note    = "24KB BLE MAC exchange memory: Activity CS, TX/RX descriptors, ADV/ACL buffers."
+note_zh = "24KB BLE MAC 交换内存：Activity CS、TX/RX 描述符、ADV/ACL 缓冲区。"
+source  = "mem_map.h LPSYS_EM_BASE(0x20408000), LPSYS_EM_SIZE(24KB)"
+exports = [{ module = "shared", name = "EM_START" }, { module = "shared", name = "EM_SIZE", field = "size" }]
+
+[[banks.regions.regions]]
+name    = "RF Cal Clear Area"
+base    = 0x20408000
+size    = 0x5000
+note    = "RF cal memset stops here, only clears first 20KB of EM."
+note_zh = "RF cal memset 截止于此，仅清零 EM 前 20KB"
+source  = "bf0_lcpu_init.c:155"
+exports = [{ module = "shared", name = "EM_RF_CAL_CLEAR_SIZE", field = "size" }]
+
+[[banks.regions]]
+name    = "Audio Shared"
+base    = 0x2040E000
+size    = 0x400
+color   = "audio"
+note    = "1KB HCPU/LCPU audio shared memory."
+note_zh = "1KB HCPU/LCPU 音频共享内存。"
+source  = "mem_map.h LCPU_AUDIO_MEM_START_ADDR = LPSYS_EM_END+1 = 0x2040E000"
+
+[[banks.regions]]
+name    = "ROM Private RAM"
+base    = 0x2040E400
+size    = 0x197C
+color   = "rom"
+note    = "~6.4KB ROM private variable area. g_rom_config @ 0x2040E48C."
+note_zh = "~6.4KB ROM 私有变量区。g_rom_config @ 0x2040E48C。"
+source  = "mem_map.h LCPU_ROM_RAM_SIZE=6*1024+0x180. memory_map.rs:a3::G_ROM_CONFIG(0x2040E48C)"
+
+[[banks.regions]]
+name    = "ROM Config"
+base    = 0x2040FDC0
+size    = 0x40
+color   = "config"
+note    = "64B ROM config block. +4=lpcycle_curr, +20=bt_txpwr, +32=em_buf, +128=ke_mem, +172=bt_rom_cfg."
+note_zh = "64B ROM 配置块。+4=lpcycle_curr, +20=bt_txpwr, +32=em_buf, +128=ke_mem, +172=bt_rom_cfg。"
+source  = "lcpu_config_type_int.h LCPU_CONFIG_START_ADDR(0x2040FDC0), LCPU_CONFIG_ROM_SIZE(0x40)"
+exports = [{ module = "a3", name = "ROM_CONFIG_BASE" }]
+
+[[banks.regions]]
+name    = "NVDS"
+base    = 0x2040FE00
+size    = 0x200
+color   = "nvds"
+note    = "512B non-volatile data storage buffer."
+note_zh = "512B 非易失性数据存储缓冲区。"
+source  = "memory_map.rs shared::NVDS_BUFF_START(0x2040FE00)"
+exports = [
+  { module = "shared", name = "NVDS_BUFF_START" },
+  { module = "shared", name = "NVDS_BUFF_SIZE", field = "size" },
+]
+
+# ── LCPU SRAM — Letter Series (A4/B4, 11KB) ───────────────────────────────
+
+[[banks]]
+id        = "lcpu_letter"
+name      = "LCPU  (Letter)"
+variant   = "letter"
+note      = "Letter (A4/B4): 11KB SRAM + 12KB Patch + 24KB EM + ~7KB ROM_RAM."
+note_zh   = "Letter(A4/B4)：11KB SRAM + 12KB Patch + 24KB EM + ~7KB ROM_RAM。"
+source    = "mem_map.h:96,122-128. memory_map.rs:letter"
+base      = 0x20400000
+size      = 0x10000
+cbus_base = 0x00400000
+
+[[banks.regions]]
+name    = "Heap / Data"
+base    = 0x20400000
+size    = 0x2800
+color   = "app"
+note    = "~10KB LCPU code + heap (11KB SRAM, last 1KB for mailbox)."
+note_zh = "~10KB LCPU 代码 + heap（11KB SRAM，末尾 1KB 为邮箱）。"
+source  = "mem_map.h LPSYS_RAM_SIZE_REV_B(11KB). Mailbox starts at 0x20402800"
+
+[[banks.regions]]
+name    = "LCPU→HCPU MB CH1"
+base    = 0x20402800
+size    = 0x200
+color   = "mailbox"
+note    = "512B IPC mailbox."
+note_zh = "512B IPC 邮箱。"
+source  = "mem_map.h LCPU2HCPU_MB_CH1_BUF_REV_B_START_ADDR(0x20402800)"
+exports = [{ module = "letter", name = "LCPU2HCPU_CH1" }]
+
+[[banks.regions]]
+name    = "MB CH2 / ROM Config"
+base    = 0x20402A00
+size    = 0x200
+color   = "config"
+note    = "512B dual-purpose: ROM Config written at boot (0xCC B), reused as MB CH2 at runtime."
+note_zh = "512B 双用途：启动时写入 ROM Config（0xCC B），运行后复用为 MB CH2。"
+source  = "mem_map.h CH2_REV_B(0x20402A00)"
+exports = [{ module = "letter", name = "ROM_CONFIG_BASE" }, { module = "letter", name = "LCPU2HCPU_CH2" }]
+
+# Gap: 0x20402C00 – 0x20404FFF
+
+[[banks.regions]]
+name    = "Patch Buffer"
+base    = 0x20405000
+size    = 0x3000
+color   = "patch"
+note    = "12KB patch buffer (B3+), code starts at 0x2040500C (+12B header)."
+note_zh = "12KB 补丁缓冲区（B3+），代码从 0x2040500C（+12B 头）开始。"
+source  = "mem_map.h LCPU_PATCH_BUF_START_ADDR(0x20405000), LCPU_PATCH_BUF_SIZE(0x3000)"
+exports = [{ module = "letter", name = "PATCH_BUF_START" }, { module = "letter", name = "PATCH_BUF_SIZE", field = "size" }]
+
+[[banks.regions.regions]]
+name    = "Patch Code"
+base    = 0x2040500C
+size    = 0x2FF4
+note    = "Patch code start address (Letter, skips 12B PACH header)."
+note_zh = "补丁代码起始地址（Letter，跳过 12B PACH header）"
+source  = "mem_map.h LCPU_PATCH_BUF_START_ADDR + 12"
+exports = [
+  { module = "letter", name = "PATCH_CODE_START" },
+  { module = "letter", name = "PATCH_CODE_START_LCPU", transform = "cbus" },
+  { module = "letter", name = "PATCH_CODE_SIZE", field = "size" },
+]
+
+# Gap: → EM starts at 0x20408000 (same as A3)
+
+[[banks.regions]]
+name    = "EM (Exchange Memory)"
+base    = 0x20408000
+size    = 0x6000
+color   = "em"
+note    = "24KB BLE MAC exchange memory (same physical region as A3)."
+note_zh = "24KB BLE MAC 交换内存（与 A3 相同物理区域）。"
+source  = "mem_map.h LPSYS_EM_BASE(0x20408000), LPSYS_EM_SIZE(24KB)"
+
+[[banks.regions]]
+name    = "Audio Shared"
+base    = 0x2040E000
+size    = 0x400
+color   = "audio"
+note    = "1KB audio shared memory (same as A3)."
+note_zh = "1KB 音频共享内存（与 A3 相同）。"
+source  = "mem_map.h LCPU_AUDIO_MEM_START_ADDR(0x2040E000)"
+
+[[banks.regions]]
+name    = "ROM Private RAM"
+base    = 0x2040E400
+size    = 0x197C
+color   = "rom"
+note    = "~6.4KB. rwip_env @ 0x20401384, lp_ref_cycle at rwip_env+0x1d8."
+note_zh = "~6.4KB. rwip_env @ 0x20401384，lp_ref_cycle 在 rwip_env+0x1d8。"
+source  = "memory_map.rs letter_rom::RWIP_ENV(0x20401384), RWIP_ENV_LP_REF_CYCLE_OFFSET(0x1d8)"
+
+[[banks.regions]]
+name    = "ROM Config"
+base    = 0x2040FDC0
+size    = 0x40
+color   = "config"
+note    = "64B ROM config (A3 offset). Letter primary config at 0x2040_2A00."
+note_zh = "64B ROM 配置（A3 偏移）。Letter 主配置在 0x2040_2A00。"
+source  = "lcpu_config_type_int.h LCPU_CONFIG_START_ADDR(0x2040FDC0)"
+
+[[banks.regions]]
+name    = "NVDS"
+base    = 0x2040FE00
+size    = 0x200
+color   = "nvds"
+note    = "512B NVDS buffer (same as A3)."
+note_zh = "512B NVDS 缓冲区（与 A3 相同）。"
+source  = "memory_map.rs shared::NVDS_BUFF_START(0x2040FE00)"
+
+# ── RFC SRAM (BT_RFC peripheral internal, peripheral bus address) ─────────
+
+[[banks]]
+id      = "rfc_sram"
+name    = "RFC SRAM"
+note    = "BT_RFC peripheral internal SRAM (0x40xx_xxxx peripheral bus, not CPU SRAM space)."
+note_zh = "BT_RFC 外设内部 SRAM（0x40xx_xxxx 外设总线，非 CPU SRAM 空间）。"
+source  = "memory_map.rs rf::BT_RFC_MEM_BASE(0x4008_2000)"
+base    = 0x40082000
+size    = 0x800
+exports = [
+  { module = "rf", name = "BT_RFC_MEM_BASE", type = "u32" },
+  { module = "rf", name = "BT_RFC_SRAM_SIZE", field = "size", type = "u32" },
+]
+
+[[banks.regions]]
+name    = "RFC Command Seqs"
+base    = 0x40082000
+size    = 0x280
+color   = "rf_cmd"
+note    = "~640B RF command sequences (BLE_ON/OFF, BT_TXON/RXON, etc.), size determined dynamically by CmdBuilder."
+note_zh = "~640B RF 命令序列（BLE_ON/OFF、BT_TXON/RXON 等），大小由 CmdBuilder 动态决定。"
+source  = "rfc_cmd.rs CmdBuilder. BT_RFC.cu_addr_reg1/2/3 point here"
+
+[[banks.regions]]
+name    = "BLE RX Cal"
+base    = 0x40082280
+size    = 0xA0
+color   = "rf_cal"
+note    = "40 words x 4B = 160B. pack_vco_rx_word(capcode, idac), indexed by BLE channel."
+note_zh = "40 words × 4B = 160B。pack_vco_rx_word(capcode, idac)，按 BLE 信道索引。"
+source  = "rfc_tables.rs store_vco_cal_tables(). CAL_ADDR_REG1[15:0]"
+
+[[banks.regions]]
+name    = "BT RX Cal"
+base    = 0x40082320
+size    = 0xA0
+color   = "rf_cal"
+note    = "40 words x 4B = 160B. Packs 79 BT channels into 40 pairs."
+note_zh = "40 words × 4B = 160B。将 79 个 BT 信道打包为 40 对。"
+source  = "rfc_tables.rs store_vco_cal_tables(). CAL_ADDR_REG1[31:16]"
+
+[[banks.regions]]
+name    = "BLE TX Cal"
+base    = 0x400823C0
+size    = 0x13C
+color   = "rf_cal"
+note    = "79 words x 4B = 316B. pack_vco_tx(capcode, idac, kcal)."
+note_zh = "79 words × 4B = 316B。pack_vco_tx(capcode, idac, kcal)。"
+source  = "rfc_tables.rs store_vco_cal_tables(). CAL_ADDR_REG2[15:0]"
+
+[[banks.regions]]
+name    = "BT TX Cal"
+base    = 0x400824FC
+size    = 0x13C
+color   = "rf_cal"
+note    = "79 words x 4B = 316B. Overwritten by EDR LO calibration data when feature=edr is enabled."
+note_zh = "79 words × 4B = 316B。启用 feature=edr 后被 EDR LO 校准数据覆盖。"
+source  = "rfc_tables.rs store_vco_cal_tables()/store_edr_lo_cal_tables(). CAL_ADDR_REG2[31:16]"
+
+[[banks.regions]]
+name    = "TXDC Cal"
+base    = 0x40082638
+size    = 0x40
+color   = "rf_cal"
+note    = "16 words x 4B = 64B. 8 power levels x 2 words/level. pack_txdc(coef0, coef1, offset_i, offset_q, ...)."
+note_zh = "16 words × 4B = 64B。8 个功率等级 × 2 word/级。pack_txdc(coef0, coef1, offset_i, offset_q, ...)。"
+source  = "rfc_tables.rs store_txdc_cal_tables(). CAL_ADDR_REG3[15:0]"
+
+[[banks.regions]]
+name    = "CFO Phase"
+base    = 0x40082790
+size    = 0xA
+color   = "rf_cal"
+note    = "cfo_phase_t (10B): { cfo_phase[2]: u32, cnt: u16 }. Auto-written by PTC2."
+note_zh = "cfo_phase_t (10B): { cfo_phase[2]: u32, cnt: u16 }。PTC2 自动写入。"
+source  = "bt_rf_fulcal.c, bluetooth_misc.c:276"
+exports = [
+  { module = "rf", name = "CFO_PHASE_ADDR", type = "u32" },
+  { module = "rf", name = "CFO_PHASE_SIZE", field = "size" },
+]
+
+# ── BT PHY internal buffer (DMA-only access) ─────────────────────────────
+
+[[banks]]
+id      = "bt_phy_mem"
+name    = "BT PHY Buffer"
+note    = "BT PHY internal buffer, DMA-only access. CPU direct read causes bus fault."
+note_zh = "BT PHY 内部缓冲区，仅 DMA 可访问，CPU 直读 bus fault。"
+source  = "bt_rf_fulcal.c"
+base    = 0x400C0000
+size    = 0x4000
+visible = false
+
+[[banks.regions]]
+name    = "PHY RX Dump"
+base    = 0x400C0000
+size    = 0x4000
+note    = "16KB PHY RX sample buffer, I/Q data read via DMA during TXDC calibration. CPU direct read causes bus fault."
+note_zh = "16KB PHY RX 采样缓冲区，TXDC 校准时通过 DMA 读取 I/Q 数据。CPU 直读 bus fault。"
+source  = "bt_rf_fulcal.c:3910 bt_rfc_txdc_cal()"
+exports = [{ module = "rf", name = "PHY_RX_DUMP_ADDR", type = "u32" }]

@@ -67,7 +67,7 @@ pub const HFP_FCW_CAL: u8 = 0x07;
 pub const FBDV_MOD_STG_5G: u8 = 2;
 
 /// FBDV modulator stage for 3GHz VCO (EDR).
-#[cfg(feature = "edr-cal")]
+#[cfg(feature = "edr")]
 pub const FBDV_MOD_STG_3G: u8 = 1;
 
 // ============================================================

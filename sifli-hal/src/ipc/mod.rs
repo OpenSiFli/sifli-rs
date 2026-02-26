@@ -76,8 +76,14 @@ use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
 use embassy_sync::waitqueue::AtomicWaker;
 
 use crate::interrupt::{self, InterruptExt};
-use crate::lcpu::ram::IpcRegion;
+use crate::ram::memory_map::shared;
+use crate::syscfg::ChipRevision;
 use crate::{peripherals, rcc};
+
+#[inline]
+const fn hcpu_to_lcpu_addr(addr: usize) -> usize {
+    addr + shared::HCPU_TO_LCPU_OFFSET
+}
 
 use circular_buf::{CircularBuf, CircularBufMutPtrExt, CircularBufPtrExt};
 
@@ -148,26 +154,26 @@ pub struct QueueConfig {
 
 impl QueueConfig {
     /// qid0: SDK Bluetooth HCI channel, using BUF1 buffer.
-    pub fn qid0_hci() -> Self {
-        let tx = IpcRegion::HCPU_TO_LCPU_CH1;
+    pub fn qid0_hci(rev: ChipRevision) -> Self {
+        let tx = shared::HCPU2LCPU_MB_CH1;
         Self {
             qid: 0,
-            rx_buf_addr: IpcRegion::lcpu_to_hcpu_start(),
+            rx_buf_addr: rev.lcpu2hcpu_ch1(),
             tx_buf_addr: tx,
-            tx_buf_addr_alias: IpcRegion::hcpu_to_lcpu_addr(tx),
-            tx_buf_size: IpcRegion::BUF_SIZE,
+            tx_buf_addr_alias: hcpu_to_lcpu_addr(tx),
+            tx_buf_size: shared::IPC_MB_BUF_SIZE,
         }
     }
 
     /// qid1: SDK system IPC channel (data-service, etc.), using BUF2 buffer.
-    pub fn qid1_system() -> Self {
-        let tx = IpcRegion::HCPU_TO_LCPU_CH2;
+    pub fn qid1_system(rev: ChipRevision) -> Self {
+        let tx = shared::HCPU2LCPU_MB_CH2;
         Self {
             qid: 1,
-            rx_buf_addr: IpcRegion::lcpu_to_hcpu_ch2_start(),
+            rx_buf_addr: rev.lcpu2hcpu_ch2(),
             tx_buf_addr: tx,
-            tx_buf_addr_alias: IpcRegion::hcpu_to_lcpu_addr(tx),
-            tx_buf_size: IpcRegion::BUF_SIZE,
+            tx_buf_addr_alias: hcpu_to_lcpu_addr(tx),
+            tx_buf_size: shared::IPC_MB_BUF_SIZE,
         }
     }
 }
@@ -281,7 +287,7 @@ fn handle_rx_irq(qid: u8) {
 ///
 /// let p = sifli_hal::init(Default::default());
 /// let mut ipc = ipc::Ipc::new(p.MAILBOX1_CH1, Irqs, ipc::Config::default());
-/// let mut q = ipc.open_queue(ipc::QueueConfig::qid0_hci()).unwrap();
+/// let mut q = ipc.open_queue(ipc::QueueConfig::qid0_hci(rev)).unwrap();
 /// ```
 pub struct Ipc<'d> {
     _tx_ch: PeripheralRef<'d, peripherals::MAILBOX1_CH1>,
@@ -322,12 +328,15 @@ impl<'d> Ipc<'d> {
         let st = &QUEUES[cfg.qid as usize];
 
         critical_section::with(|_| {
-            if st.active.swap(true, Ordering::AcqRel) {
+            if st.active.load(Ordering::Relaxed) {
                 return Err(Error::AlreadyOpen);
             }
 
-            st.rx_buf.store(cfg.rx_buf_addr, Ordering::Release);
-            st.tx_buf.store(cfg.tx_buf_addr, Ordering::Release);
+            // SAFETY: Store buffer pointers BEFORE marking active.
+            // handle_rx_irq() checks active first, then reads rx_buf.
+            // This ordering guarantees rx_buf is valid whenever active=true.
+            st.rx_buf.store(cfg.rx_buf_addr, Ordering::Relaxed);
+            st.tx_buf.store(cfg.tx_buf_addr, Ordering::Relaxed);
 
             // Sender initializes TX ring buffer and remaps rd_buffer_ptr to peer-visible alias.
             if cfg.tx_buf_addr != 0 {
@@ -346,7 +355,10 @@ impl<'d> Ipc<'d> {
             }
 
             // SDK behavior: don't read RX ring buffer on open (peer may not be initialized yet).
-            st.rx_len.store(0, Ordering::Release);
+            st.rx_len.store(0, Ordering::Relaxed);
+
+            // Publish point: after this, interrupt handler will process this queue.
+            st.active.store(true, Ordering::Release);
 
             // Unmask: per SDK semantics, unmask qid on TX mailbox; also unmask RX side to reduce missed interrupts.
             let qid_mask = 1u16 << cfg.qid;
