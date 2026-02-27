@@ -21,7 +21,13 @@ impl<'d> ChannelAndRequest<'d> {
         buf: &'a mut [W],
         options: TransferOptions,
     ) -> Transfer<'a> {
-        Transfer::new_read(self.channel.reborrow(), self.request, peri_addr, buf, options)
+        Transfer::new_read(
+            self.channel.reborrow(),
+            self.request,
+            peri_addr,
+            buf,
+            options,
+        )
     }
 
     #[allow(unused)]
@@ -31,7 +37,13 @@ impl<'d> ChannelAndRequest<'d> {
         buf: *mut [MW],
         options: TransferOptions,
     ) -> Transfer<'a> {
-        Transfer::new_read_raw(self.channel.reborrow(), self.request, peri_addr, buf, options)
+        Transfer::new_read_raw(
+            self.channel.reborrow(),
+            self.request,
+            peri_addr,
+            buf,
+            options,
+        )
     }
 
     pub unsafe fn write<'a, W: Word>(
@@ -40,7 +52,13 @@ impl<'d> ChannelAndRequest<'d> {
         peri_addr: *mut W,
         options: TransferOptions,
     ) -> Transfer<'a> {
-        Transfer::new_write(self.channel.reborrow(), self.request, buf, peri_addr, options)
+        Transfer::new_write(
+            self.channel.reborrow(),
+            self.request,
+            buf,
+            peri_addr,
+            options,
+        )
     }
 
     #[allow(unused)]
@@ -50,7 +68,13 @@ impl<'d> ChannelAndRequest<'d> {
         peri_addr: *mut PW,
         options: TransferOptions,
     ) -> Transfer<'a> {
-        Transfer::new_write_raw(self.channel.reborrow(), self.request, buf, peri_addr, options)
+        Transfer::new_write_raw(
+            self.channel.reborrow(),
+            self.request,
+            buf,
+            peri_addr,
+            options,
+        )
     }
 
     #[allow(dead_code)]

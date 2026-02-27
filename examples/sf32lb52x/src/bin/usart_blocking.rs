@@ -2,16 +2,16 @@
 #![no_main]
 
 use defmt::*;
-use embassy_executor::Spawner;
-use sifli_hal::usart::{Config, Uart};
 use defmt_rtt as _;
+use embassy_executor::Spawner;
 use panic_probe as _;
+use sifli_hal::usart::{Config, Uart};
 
-// This example uses the debug UART by default. You can view debug logs  
-// and output via SiFli Trace, but this may interfere with debugging  
-// and flashing. Before the next download, you may need manually press 
-// the reset button or change the UART pins to any other GPIO in the 
-// following code.  
+// This example uses the debug UART by default. You can view debug logs
+// and output via SiFli Trace, but this may interfere with debugging
+// and flashing. Before the next download, you may need manually press
+// the reset button or change the UART pins to any other GPIO in the
+// following code.
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -25,7 +25,7 @@ async fn main(_spawner: Spawner) {
     unwrap!(usart.blocking_write(b"Hello Embassy!\n"));
     unwrap!(usart.blocking_write(b"Hello Embedded Rust!\n"));
     unwrap!(usart.blocking_write(b"wrote Hello, starting echo\n"));
-    
+
     info!("wrote Hello, starting echo(Try write someting at 5 bytes)");
 
     loop {

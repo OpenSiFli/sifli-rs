@@ -85,7 +85,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
             <td>✅</td><td></td><td></td>
         </tr>
         <tr>
-            <td rowspan="4"><strong>RCC</strong></td>
+            <td rowspan="3"><strong>RCC</strong></td>
             <td>Peripheral RCC Codegen (enable, freq...)</td>
             <td>✅</td><td></td><td></td>
         </tr>
@@ -95,10 +95,6 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td>RCC tree Configure</td>
-            <td>🌗</td><td></td><td></td>
-        </tr>
-        <tr>
-            <td>Modify frequency in same DVFS mode</td>
             <td>✅</td><td></td><td></td>
         </tr>
         <tr>
@@ -116,6 +112,15 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td>EXTI ➕</td><td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="2"><strong>Timer</strong></td>
+            <td>Simple PWM</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Complementary PWM, Input etc.</td>
+            <td>📝</td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="4"><strong>USART</strong></td>
@@ -136,7 +141,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td rowspan="3"><strong>DMA</strong></td>
-            <td>Transfer(P2M, M2P)</td>
+            <td>Transfer(P2M, M2P, M2M)</td>
             <td>✅</td><td></td><td></td>
         </tr>
         <tr>
@@ -145,6 +150,19 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td>ExtDMA</td><td></td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="3"><strong>Bluetooth</strong></td>
+            <td>RF Calibration</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>BLE (<a href="https://github.com/embassy-rs/bt-hci">bt-hci</a>, <a href="https://github.com/embassy-rs/trouble">trouble</a>) ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Classic Bluetooth</td>
+            <td>📝</td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="3"><strong>USB<br>(see also:<a href="https://github.com/decaday/musb">musb</a>)</strong></td>
@@ -204,18 +222,37 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td rowspan="4"><strong>PMU</strong></td>
-            <td>DVFS Upscale</td>
+            <td>DVFS Switch</td>
             <td>✅</td><td></td><td></td>
         </tr>
         <tr>
-            <td>DVFS Downscale</td><td></td><td></td><td></td>
+            <td>Efuse</td>
+            <td>✅</td><td></td><td></td>
         </tr>
         <tr>
-            <td>Charge Modoule</td><td></td><td></td><td></td>
+            <td>Charge Module</td><td></td><td></td><td></td>
         </tr>
         <tr>
             <td>Buck & LDO</td>
             <td>🌗</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="3"><strong>LCPU Control/<br>IPC</strong></td>
+            <td>LCPU Power On, Wakeup, Patch, RCC, Control</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Mailbox ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>IPCQueue, HCI ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td><strong>TRNG</strong></td>
+            <td>Hardware Random Number Generator ➕</td>
+            <td>✅</td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="4"><strong>Audio</strong></td>
@@ -235,15 +272,6 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td colspan="2"><strong>SPI</strong></td><td></td><td></td><td></td>
-        </tr>
-        <tr>
-            <td colspan="2"><strong>Mailbox</strong></td><td></td><td></td><td></td>
-        </tr>
-        <tr>
-            <td colspan="2"><strong>BT</strong></td><td></td><td></td><td></td>
-        </tr>
-        <tr>
-            <td colspan="2"><strong>BLE</strong></td><td></td><td></td><td></td>
         </tr>
         <tr>
             <td colspan="2"><strong>ePicasso</strong></td><td></td><td></td><td></td>
@@ -272,6 +300,12 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
 - `time-driver-xxx`: 为`time-driver`配置定时器。它至少需要两个捕获/比较通道。对于`sf32lb52x hcpu`，只有`gptim1`和`gptim2`可用。`atim1`存在问题：[#5](https://github.com/OpenSiFli/sifli-rs/issues/5)。
 
 - `unchecked-overclocking`: 启用此feature以禁用超频检查。除非你知道自己在做什么，否则不要启用此feature!
+
+- `sf32lb52x-lcpu`: 选择 SF32LB52x LCPU。
+
+- `edr-cal`: 启用 EDR LO 3GHz 校准 (VCO3G + OSLO)。仅 BR/EDR (经典蓝牙) 需要。纯 BLE 应用可以跳过此项以加快启动速度。
+
+- `bt-hci`: 启用用于 IPC HCI 通信的 bt-hci 传输层。
 
 ## 许可证
 

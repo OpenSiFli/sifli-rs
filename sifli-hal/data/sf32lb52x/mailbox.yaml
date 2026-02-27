@@ -1,0 +1,7 @@
+# Mailbox configuration for inter-processor communication
+MAILBOX1:
+  # HCPU -> LCPU (H2L), belongs to HPSYS
+  channel_total: 4
+MAILBOX2:
+  # LCPU -> HCPU (L2H), belongs to LPSYS but accessible from HCPU
+  channel_total: 2

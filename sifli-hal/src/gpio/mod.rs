@@ -10,8 +10,8 @@ use embassy_sync::waitqueue::AtomicWaker;
 use hpsys::HpsysPin;
 
 use crate::interrupt::InterruptExt;
-use crate::{interrupt, peripherals, Peripheral};
 use crate::utils::BitIter64;
+use crate::{interrupt, peripherals, Peripheral};
 
 // TODO: move this const to _generated.rs
 #[cfg(feature = "sf32lb52x")]
@@ -100,7 +100,7 @@ impl<'d> Input<'d> {
         let mut pin = Flex::new(pin);
         pin.set_pull(pull);
         pin.set_as_input();
-        
+
         Self { pin }
     }
 
@@ -196,7 +196,7 @@ fn irq_handler<const N: usize>(wakers: &[AtomicWaker; N]) {
     let isr0 = gpio.isr0().read().0;
     let isr1 = gpio.isr1().read().0;
     // trace!("gpio irq: isr0={:x} isr1={:x}", isr0, isr1);
-    
+
     // Combine into a single 64-bit status for easier iteration
     let status = (isr1 as u64) << 32 | isr0 as u64;
 
@@ -213,7 +213,7 @@ fn irq_handler<const N: usize>(wakers: &[AtomicWaker; N]) {
 
         // Clear the interrupt flag.
         pin.clear_interrupt();
-        
+
         // TODO: The C HAL implementation (`HAL_GPIO_EXTI_IRQHandler`) includes logic
         // to clear the corresponding AON (Always-On) Wakeup Source Register (WSR)
         // if a GPIO pin is also configured as a wakeup pin. This is important for
@@ -503,11 +503,9 @@ impl<'d> Analog<'d> {
     pub fn new(pin: impl Peripheral<P = impl Pin> + 'd) -> Self {
         let mut pin = Flex::new(pin);
         pin.set_as_analog();
-        Self { _pin: pin}
+        Self { _pin: pin }
     }
 }
-
-
 
 /// GPIO flexible pin.
 ///
@@ -554,7 +552,7 @@ impl<'d> Flex<'d> {
     pub fn set_as_input(&mut self) {
         self.inner.set_as_input();
     }
-    
+
     /// Configure pin as open drain output
     pub fn set_as_output_od(&mut self) {
         self.inner.set_as_output_od();
@@ -575,7 +573,7 @@ impl<'d> Flex<'d> {
         self.inner.set_high();
     }
 
-    /// Set pin level low 
+    /// Set pin level low
     pub fn set_low(&mut self) {
         self.inner.set_low();
     }
@@ -610,7 +608,7 @@ impl<'d> Flex<'d> {
         self.inner.is_low()
     }
 
-    /// Returns whether pin output level is high 
+    /// Returns whether pin output level is high
     pub fn is_set_high(&self) -> bool {
         self.inner.is_set_high()
     }
@@ -619,13 +617,13 @@ impl<'d> Flex<'d> {
     pub fn is_set_low(&self) -> bool {
         self.inner.is_set_low()
     }
-    
+
     /// Set pin pull resistor
     pub fn set_pull(&mut self, pull: Pull) {
         self.inner.set_pull(pull);
     }
 
-    /// Set pin drive strength 
+    /// Set pin drive strength
     pub fn set_drive_strength(&mut self, drive: Drive) {
         self.inner.set_drive_strength(drive);
     }
@@ -1145,4 +1143,3 @@ impl<'d> embedded_hal_async::digital::Wait for OutputOpenDrain<'d> {
         Ok(())
     }
 }
-

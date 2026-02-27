@@ -19,11 +19,11 @@ use crate::to_system_bus_addr;
 use crate::utils::blocking_wait_timeout_ms;
 use crate::{interrupt, peripherals};
 
+pub use vals::LcdIntfSel as LcdInterfaceSelector;
 pub use vals::{
     AlphaSel, LayerFormat, LcdFormat, LcdIntfSel, Polarity, SingleAccessType, SpiAccessLen,
     SpiClkInit as SpiClkPhase, SpiClkPol, SpiLcdFormat, SpiLineMode, SpiRdMode, TargetLcd,
 };
-pub use vals::LcdIntfSel as LcdInterfaceSelector;
 
 static WAKER: AtomicWaker = AtomicWaker::new();
 
@@ -249,7 +249,17 @@ pub struct Config<I: LcdInterface> {
     pub in_color_format: InputColorFormat,
     /// LCD reset interval in microseconds
     pub reset_lcd_interval_us: u32,
-    
+
+    /// This option cleans the dcache of the image area before sending data using LCDC.
+    /// Currently implemented using `cortex_m::Peripherals::steal()`.
+    ///
+    /// Since SF32 enables DCache by default, disabling this option may lead to memory
+    /// inconsistency, resulting in display corruption or visual artifacts.
+    ///
+    /// However, clean dcache is a time-consuming operation. If you want to manage dcache yourself,
+    /// you can disable this option.
+    pub dcache_clean: bool,
+
     /// Interface specific settings (e.g., SpiConfig)
     pub interface_config: I::Config,
 }
@@ -263,6 +273,7 @@ impl Default for Config<Spi> {
             in_color_format: InputColorFormat::Rgb565,
             reset_lcd_interval_us: 20,
             interface_config: SpiConfig::default(),
+            dcache_clean: true,
         }
     }
 }
@@ -291,7 +302,7 @@ impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandl
 
         if irq_status.icb_of_raw_stat() {
             // Mask Buffer Overflow Interrupt
-             regs.setting().modify(|w| w.set_icb_of_mask(false));
+            regs.setting().modify(|w| w.set_icb_of_mask(false));
         }
 
         // Check for End of Frame (EOF)
@@ -340,7 +351,7 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
             "Unsupported output format for SPI interface"
         );
 
-        unsafe { 
+        unsafe {
             T::Interrupt::unpend();
             T::Interrupt::enable();
         }
@@ -399,10 +410,10 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
 
         regs.setting().modify(|w| w.set_auto_gate_en(true));
 
-        let lcd_format =
-            self.config
-                .out_color_format
-                .to_lcd_format(InterfaceType::Spi);
+        let lcd_format = self
+            .config
+            .out_color_format
+            .to_lcd_format(InterfaceType::Spi);
 
         let spi_lcd_format = self.config.out_color_format.to_spi_lcd_format();
 
@@ -473,7 +484,12 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
     }
 
     /// Send data parameter to the LCD via SPI.
-    pub fn send_cmd_data(&mut self, data: u32, len_bytes: u8, continuous: bool) -> Result<(), Error> {
+    pub fn send_cmd_data(
+        &mut self,
+        data: u32,
+        len_bytes: u8,
+        continuous: bool,
+    ) -> Result<(), Error> {
         if len_bytes == 0 || len_bytes > 4 {
             return Err(Error::InvalidParameter);
         }
@@ -520,9 +536,17 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
         buffer: &[u8],
     ) -> Result<(), Error> {
         debug_assert!(
-            buffer.as_ptr() as usize % 4 == 0,
+            (buffer.as_ptr() as usize).is_multiple_of(4),
             "Buffer address must be 4-byte aligned"
         );
+
+        // Clean D-cache to ensure data consistency
+        if self.config.dcache_clean {
+            unsafe {
+                let mut cp = cortex_m::Peripherals::steal();
+                cp.SCB.clean_dcache_by_slice(buffer);
+            }
+        }
 
         let regs = T::regs();
 
@@ -578,7 +602,7 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
         regs.layer0_src().write(|w| w.set_addr(addr));
 
         // --- Interrupt Setup ---
-        
+
         // Clear any pending status flags from previous runs
         regs.irq().write(|w| {
             w.set_eof_stat(true);
@@ -592,7 +616,7 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
             w.set_dpi_udr_mask(true);
             w.set_icb_of_mask(true);
         });
-        
+
         compiler_fence(Ordering::SeqCst);
 
         // Start Transfer
@@ -609,34 +633,31 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
     ) -> Result<(), Error> {
         let bpp = self.config.in_color_format.bpp() as usize;
         let len = buffer.len();
-        
-        if len % bpp != 0 {
+
+        if !len.is_multiple_of(bpp) {
             return Err(Error::UnalignedData);
         }
-        
+
         let pixel_count = len / bpp;
 
         if (width as usize) * (height as usize) != pixel_count {
-            error!("Buffer size mismatch: expected {} bytes, got {} (width={}, height={})", (width as usize) * (height as usize) * bpp, len, width, height);
+            error!(
+                "Buffer size mismatch: expected {} bytes, got {} (width={}, height={})",
+                (width as usize) * (height as usize) * bpp,
+                len,
+                width,
+                height
+            );
             return Err(Error::UnalignedData);
         }
 
-        self.send_pixel_data(
-            0,
-            0,
-            width - 1,
-            height - 1,
-            buffer,
-        )
-        .await
+        self.send_pixel_data(0, 0, width - 1, height - 1, buffer)
+            .await
     }
 
-    pub async fn send_pixel_data_framebuffer(
-        &mut self,
-        buffer: &[u8],
-    ) -> Result<(), Error> 
-    {
-        self.send_pixel_data_rect(self.config.width, self.config.height, buffer).await
+    pub async fn send_pixel_data_framebuffer(&mut self, buffer: &[u8]) -> Result<(), Error> {
+        self.send_pixel_data_rect(self.config.width, self.config.height, buffer)
+            .await
     }
 }
 
@@ -647,7 +668,7 @@ impl<'d, T: Instance> Lcdc<'d, T, Spi> {
 impl<'d, T: Instance, I: LcdInterface> Lcdc<'d, T, I> {
     /// Reset the LCD via the dedicated reset pin (hardware reset).
     pub async fn reset_lcd(&mut self) {
-       self.set_lcd_reset(true);
+        self.set_lcd_reset(true);
         Timer::after(Duration::from_micros(
             self.config.reset_lcd_interval_us as u64,
         ))
@@ -673,7 +694,7 @@ impl<'d, T: Instance, I: LcdInterface> Lcdc<'d, T, I> {
         .map_err(|_| Error::Timeout)
     }
 
-        /// Helper: Wait for the Single Access (Command/Param) interface to be ready.
+    /// Helper: Wait for the Single Access (Command/Param) interface to be ready.
     fn wait_single_busy(&self) -> Result<(), Error> {
         let regs = T::regs();
 
@@ -685,10 +706,10 @@ impl<'d, T: Instance, I: LcdInterface> Lcdc<'d, T, I> {
     /// This relies on generic status flags (EOF), so it's kept in the generic block.
     async fn wait_for_transfer_completion(&mut self) -> Result<(), Error> {
         let regs = T::regs();
-        
+
         poll_fn(move |cx| {
             WAKER.register(cx.waker());
-            
+
             // Check for Errors by reading raw status
             let irq = regs.irq().read();
             if irq.dpi_udr_raw_stat() {
@@ -700,7 +721,7 @@ impl<'d, T: Instance, I: LcdInterface> Lcdc<'d, T, I> {
 
             // Check if EOF interrupt is masked/disabled (ISR signal)
             if !regs.setting().read().eof_mask() {
-                 return Poll::Ready(Ok(()));
+                return Poll::Ready(Ok(()));
             }
 
             Poll::Pending
@@ -758,7 +779,7 @@ impl Instance for peripherals::LCDC1 {
 // DisplayBus Implementation
 // ============================================================================
 
-impl <'d, T: Instance> ErrorType for Lcdc<'d, T, Spi> {
+impl<'d, T: Instance> ErrorType for Lcdc<'d, T, Spi> {
     type Error = Error;
 }
 
@@ -767,31 +788,35 @@ impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
         if cmd.is_empty() || cmd.len() > 4 {
             return Err(Error::InvalidParameter);
         }
-        
-        let cmd_word = cmd.iter()
+
+        let cmd_word = cmd
+            .iter()
             .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
-        
+
         self.send_cmd(cmd_word, cmd.len() as u8, false)
     }
-    
-    async fn write_cmd_with_params(&mut self, cmd: &[u8], params: &[u8]) -> Result<(), Self::Error> {
+
+    async fn write_cmd_with_params(
+        &mut self,
+        cmd: &[u8],
+        params: &[u8],
+    ) -> Result<(), Self::Error> {
         if cmd.is_empty() || cmd.len() > 4 {
             return Err(Error::InvalidParameter);
         }
-        
-        let cmd_word = cmd.iter()
-            .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
-        
-        self.send_cmd(cmd_word, cmd.len() as u8, params.len() != 0)?;
 
-        if params.len() > 0 {
-            params.chunks(4)
-            .enumerate()
-            .try_for_each(|(i, chunk)| {
+        let cmd_word = cmd
+            .iter()
+            .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
+
+        self.send_cmd(cmd_word, cmd.len() as u8, !params.is_empty())?;
+
+        if !params.is_empty() {
+            params.chunks(4).enumerate().try_for_each(|(i, chunk)| {
                 let data_word = chunk
                     .iter()
                     .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
-                
+
                 let is_last = (i + 1) * 4 >= params.len();
                 self.send_cmd_data(data_word, chunk.len() as u8, !is_last)
             })
@@ -799,21 +824,30 @@ impl<'d, T: Instance> DisplayBus for Lcdc<'d, T, Spi> {
             Ok(())
         }
     }
-    
-    async fn write_pixels(&mut self, cmd: &[u8], data: &[u8], metadata: display_driver::Metadata) -> Result<(), DisplayError<Self::Error>> {
+
+    async fn write_pixels(
+        &mut self,
+        cmd: &[u8],
+        data: &[u8],
+        metadata: display_driver::Metadata,
+    ) -> Result<(), DisplayError<Self::Error>> {
         if cmd.is_empty() || cmd.len() > 4 {
             return Err(DisplayError::BusError(Error::InvalidParameter));
         }
 
         let area = metadata.area.unwrap();
-        
-        let cmd_word = cmd.iter()
+
+        let cmd_word = cmd
+            .iter()
             .fold(0u32, |acc, &byte| (acc << 8) | (byte as u32));
-        
-        self.send_cmd(cmd_word, cmd.len() as u8, true).map_err(DisplayError::BusError)?;
+
+        self.send_cmd(cmd_word, cmd.len() as u8, true)
+            .map_err(DisplayError::BusError)?;
 
         let (x1, y1) = area.bottom_right();
-        self.send_pixel_data(area.x, area.y, x1, y1, data).await.map_err(DisplayError::BusError)
+        self.send_pixel_data(area.x, area.y, x1, y1, data)
+            .await
+            .map_err(DisplayError::BusError)
     }
 
     fn set_reset(&mut self, reset: bool) -> Result<(), DisplayError<Self::Error>> {

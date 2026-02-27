@@ -19,7 +19,7 @@ impl HpsysPin {
     }
 
     fn pinmux(&self) -> HpsysPinmux {
-        crate::pac::HPSYS_PINMUX  
+        crate::pac::HPSYS_PINMUX
     }
 
     #[inline]
@@ -46,7 +46,6 @@ impl HpsysPin {
         };
         (ier & self.bit()) == 0
     }
-
 
     /// Clears the interrupt flag by writing to the ISR (Interrupt Status Register).
     pub fn clear_interrupt(&mut self) {
@@ -77,7 +76,6 @@ impl HpsysPin {
         // Corresponds to WAIT_ISR_DISABLED in C HAL, except 52.
         // crate::cortex_m_blocking_delay_us(1);
     }
-
 
     pub fn enable_interrupt(&mut self) {
         if self.pin / 32 == 0 {
@@ -112,13 +110,13 @@ impl HpsysPin {
         // Configure interrupt polarity
         match trigger {
             InterruptTrigger::EdgeHigh | InterruptTrigger::LevelHigh => {
-            self.set_ipr(true, false); // Set IPHR, clear IPLR
+                self.set_ipr(true, false); // Set IPHR, clear IPLR
             }
             InterruptTrigger::EdgeLow | InterruptTrigger::LevelLow => {
-            self.set_ipr(false, true); // Clear IPHR, set IPLR
+                self.set_ipr(false, true); // Clear IPHR, set IPLR
             }
             InterruptTrigger::AnyEdge => {
-            self.set_ipr(true, true); // Set both IPHR and IPLR
+                self.set_ipr(true, true); // Set both IPHR and IPLR
             }
         }
     }
@@ -152,7 +150,7 @@ impl HpsysPin {
     pub fn set_pull(&mut self, pull: Pull) {
         let (pe, ps) = match pull {
             Pull::None => (false, vals::Ps::Down),
-            Pull::Up => (true, vals::Ps::Up), 
+            Pull::Up => (true, vals::Ps::Up),
             Pull::Down => (true, vals::Ps::Down),
         };
 
@@ -162,19 +160,19 @@ impl HpsysPin {
                     w.set_pe(pe);
                     w.set_ps(ps);
                 });
-            },
+            }
             39..=42 => {
                 self.pinmux().pad_pa39_42((self.pin - 39) as _).modify(|w| {
                     w.set_pe(pe);
                     w.set_ps(ps);
                 });
-            },
+            }
             43..=44 => {
                 self.pinmux().pad_pa43_44((self.pin - 43) as _).modify(|w| {
                     w.set_pe(pe);
                     w.set_ps(ps);
                 });
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -192,7 +190,7 @@ impl HpsysPin {
                     w.set_ds0(ds0);
                     w.set_ds1(ds1);
                 });
-            },
+            }
             39..=42 => {
                 let ds = match strength {
                     Drive::Drive0 => false,
@@ -200,18 +198,18 @@ impl HpsysPin {
                     _ => {
                         warn!("PA39-42 can only be set to Drive0 or Drive1");
                         true
-                    },
+                    }
                 };
                 self.pinmux().pad_pa39_42((self.pin - 39) as _).modify(|w| {
                     w.set_ds(ds);
                 });
-            },
+            }
             43..=44 => {
                 self.pinmux().pad_pa43_44((self.pin - 43) as _).modify(|w| {
                     w.set_ds0(ds0);
                     w.set_ds1(ds1);
                 });
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -219,23 +217,23 @@ impl HpsysPin {
     pub fn set_slew_rate(&mut self, slew_rate: SlewRate) {
         let sr = match slew_rate {
             SlewRate::Fast => vals::Sr::Fast,
-            SlewRate::Slow => vals::Sr::Slow,  
+            SlewRate::Slow => vals::Sr::Slow,
         };
         match self.pin {
             0..=38 => {
                 self.pinmux().pad_pa0_38(self.pin as _).modify(|w| {
                     w.set_sr(sr);
                 });
-            },
+            }
             39..=42 => {
                 // TODO: should this be a panic?
                 warn!("Cannot set slew rate on pad 39-42");
-            }, 
+            }
             43..=44 => {
                 self.pinmux().pad_pa43_44((self.pin - 43) as _).modify(|w| {
                     w.set_sr(sr);
                 });
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -251,17 +249,17 @@ impl HpsysPin {
                 self.pinmux().pad_pa0_38(self.pin as _).modify(|w| {
                     w.set_is(is);
                 });
-            },
+            }
             39..=42 => {
                 self.pinmux().pad_pa39_42((self.pin - 39) as _).modify(|w| {
                     w.set_is(is);
                 });
-            },
+            }
             43..=44 => {
                 self.pinmux().pad_pa43_44((self.pin - 43) as _).modify(|w| {
                     w.set_is(is);
                 });
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -305,7 +303,7 @@ impl HpsysPin {
         let bit = if self.pin / 32 == 0 {
             self.gpio().doesr0().read().0
         } else {
-            self.gpio().doesr1().read().0  
+            self.gpio().doesr1().read().0
         };
         (bit & self.bit()) != 0
     }
@@ -324,7 +322,7 @@ impl HpsysPin {
     }
 
     pub fn get_level(&self) -> Level {
-        self.is_high().into()  
+        self.is_high().into()
     }
 
     pub fn set_high(&mut self) {
@@ -381,34 +379,46 @@ impl HpsysPin {
 
     /// Set function without setting pull-up/down.
     /// # Safety
-    /// 
+    ///
     /// Caller must ensure fsel is valid for the pin.
     pub unsafe fn set_fsel_unchecked(&mut self, fsel: u8) {
         match self.pin {
             0..=38 => {
-                self.pinmux().pad_pa0_38(self.pin as _).modify(|w| w.set_fsel(fsel));
-            },
-            39..=42 => { 
-                self.pinmux().pad_pa39_42((self.pin - 39) as _).modify(|w| w.set_fsel(fsel));
-            },
+                self.pinmux()
+                    .pad_pa0_38(self.pin as _)
+                    .modify(|w| w.set_fsel(fsel));
+            }
+            39..=42 => {
+                self.pinmux()
+                    .pad_pa39_42((self.pin - 39) as _)
+                    .modify(|w| w.set_fsel(fsel));
+            }
             43..=44 => {
-                self.pinmux().pad_pa43_44((self.pin - 43) as _).modify(|w| w.set_fsel(fsel)); 
-            },
+                self.pinmux()
+                    .pad_pa43_44((self.pin - 43) as _)
+                    .modify(|w| w.set_fsel(fsel));
+            }
             _ => unreachable!(),
         }
     }
 
     pub fn set_ie(&mut self, ie: bool) {
-                match self.pin {
+        match self.pin {
             0..=38 => {
-                self.pinmux().pad_pa0_38(self.pin as _).modify(|w| w.set_ie(ie));
-            },
-            39..=42 => { 
-                self.pinmux().pad_pa39_42((self.pin - 39) as _).modify(|w| w.set_ie(ie));
-            },
+                self.pinmux()
+                    .pad_pa0_38(self.pin as _)
+                    .modify(|w| w.set_ie(ie));
+            }
+            39..=42 => {
+                self.pinmux()
+                    .pad_pa39_42((self.pin - 39) as _)
+                    .modify(|w| w.set_ie(ie));
+            }
             43..=44 => {
-                self.pinmux().pad_pa43_44((self.pin - 43) as _).modify(|w| w.set_ie(ie)); 
-            },
+                self.pinmux()
+                    .pad_pa43_44((self.pin - 43) as _)
+                    .modify(|w| w.set_ie(ie));
+            }
             _ => unreachable!(),
         }
     }

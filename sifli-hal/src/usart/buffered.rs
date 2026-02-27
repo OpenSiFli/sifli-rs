@@ -14,16 +14,16 @@ use embassy_hal_internal::{Peripheral, PeripheralRef};
 use embassy_sync::waitqueue::AtomicWaker;
 
 use super::{
-    clear_interrupt_flags, configure, half_duplex_set_rx_tx_before_write, reconfigure, send_break, set_baudrate,
-    Config, ConfigError, CtsPin, Duplex, Error, HalfDuplexConfig, HalfDuplexReadback, Instance, Regs,
-    RtsPin, RxdPin, TxdPin,
+    clear_interrupt_flags, configure, half_duplex_set_rx_tx_before_write, reconfigure, send_break,
+    set_baudrate, Config, ConfigError, CtsPin, Duplex, Error, HalfDuplexConfig, HalfDuplexReadback,
+    Instance, Regs, RtsPin, RxdPin, TxdPin,
 };
 
 use crate::gpio::{AfType, AnyPin, Pull, SealedPin as _};
-use crate::interrupt::{self, InterruptExt, typelevel::Interrupt as _};
+use crate::interrupt::{self, typelevel::Interrupt as _, InterruptExt};
+use crate::pac::usart::regs;
 use crate::rcc;
 use crate::time::Hertz;
-use crate::pac::usart::regs;
 
 /// Interrupt handler.
 pub struct InterruptHandler<T: Instance> {
@@ -113,7 +113,10 @@ unsafe fn on_interrupt(r: Regs, state: &'static State) {
                 });
             }
 
-            half_duplex_set_rx_tx_before_write(&r, state.half_duplex_readback.load(Ordering::Relaxed));
+            half_duplex_set_rx_tx_before_write(
+                &r,
+                state.half_duplex_readback.load(Ordering::Relaxed),
+            );
 
             r.tdr().as_ptr().write_volatile(regs::Tdr(buf[0].into()));
             tx_reader.pop_done(1);
@@ -931,7 +934,9 @@ impl<'d, T: Instance> embedded_hal_nb::serial::Read for BufferedUartRx<'d, T> {
 
 impl<'d, T: Instance> embedded_hal_nb::serial::Write for BufferedUartTx<'d, T> {
     fn write(&mut self, char: u8) -> nb::Result<(), Self::Error> {
-        self.blocking_write(&[char]).map(drop).map_err(nb::Error::Other)
+        self.blocking_write(&[char])
+            .map(drop)
+            .map_err(nb::Error::Other)
     }
 
     fn flush(&mut self) -> nb::Result<(), Self::Error> {
@@ -947,7 +952,10 @@ impl<'d, T: Instance> embedded_hal_nb::serial::Read for BufferedUart<'d, T> {
 
 impl<'d, T: Instance> embedded_hal_nb::serial::Write for BufferedUart<'d, T> {
     fn write(&mut self, char: u8) -> nb::Result<(), Self::Error> {
-        self.tx.blocking_write(&[char]).map(drop).map_err(nb::Error::Other)
+        self.tx
+            .blocking_write(&[char])
+            .map(drop)
+            .map_err(nb::Error::Other)
     }
 
     fn flush(&mut self) -> nb::Result<(), Self::Error> {

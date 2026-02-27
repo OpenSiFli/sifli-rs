@@ -35,6 +35,12 @@ jobs:
         cargo update
         cargo build --verbose --features "sf32lb52x rt defmt" --target thumbv8m.main-none-eabi
         cd $GITHUB_WORKSPACE
+    - name: Check sifli-hal
+      run: |
+        cd sifli-hal
+        cargo update
+        cargo test --no-default-features --features="sf32lb52x time"
+        cd $GITHUB_WORKSPACE
     - name: Build Examples
       run: |
         for d in $(ls -1 ./examples); do

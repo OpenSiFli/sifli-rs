@@ -24,8 +24,11 @@ async fn main(_spawner: Spawner) {
         let ch7_res = adc.blocking_read(&mut ch7).unwrap();
 
         info!("ch0 value: {}, mv = {}", ch0_res.value(), ch0_res.to_mv());
-        info!("vbat(ch7)_sample value: {}, mv = {}", ch7_res.value(), ch7_res.to_mv());
+        info!(
+            "vbat(ch7)_sample value: {}, mv = {}",
+            ch7_res.value(),
+            ch7_res.to_mv()
+        );
         Timer::after_millis(500).await;
     }
 }
-

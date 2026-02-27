@@ -2,9 +2,9 @@
 #![no_main]
 
 use defmt::*;
-use {defmt_rtt as _, panic_probe as _};
 use embassy_executor::Spawner;
 use embassy_time::Timer;
+use {defmt_rtt as _, panic_probe as _};
 
 use sifli_hal::adc::{Adc, Channel};
 use sifli_hal::bind_interrupts;
@@ -32,8 +32,11 @@ async fn main(_spawner: Spawner) {
         let ch7_res = adc.read(&mut ch7).await.unwrap();
 
         info!("ch0 value: {}, mv = {}", ch0_res.value(), ch0_res.to_mv());
-        info!("vbat(ch7)_sample value: {}, mv = {}", ch7_res.value(), ch7_res.to_mv());
+        info!(
+            "vbat(ch7)_sample value: {}, mv = {}",
+            ch7_res.value(),
+            ch7_res.to_mv()
+        );
         Timer::after_millis(500).await;
     }
 }
-

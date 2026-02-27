@@ -30,7 +30,6 @@ macro_rules! pin_trait {
     };
 }
 
-
 macro_rules! dma_trait {
     ($signal:ident, $instance:path$(, $mode:path)?) => {
         #[doc = concat!(stringify!($signal), " DMA request trait")]

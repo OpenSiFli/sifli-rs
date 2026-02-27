@@ -8,8 +8,8 @@ use musb::MusbInstance;
 use musb::{Bus, ControlPipe, Endpoint, In, MusbDriver, Out, UsbInstance};
 
 use crate::gpio::hpsys::HpsysPin;
-use crate::pac::HPSYS_CFG;
 use crate::interrupt::typelevel::Interrupt;
+use crate::pac::HPSYS_CFG;
 use crate::rcc::{get_clk_usb_div, get_clk_usb_source, RccEnableReset, RccGetFreq};
 use crate::{interrupt, Peripheral};
 
@@ -18,14 +18,15 @@ fn init<T: Instance>() {
     if let Some(f) = freq {
         if f.0 != 60_000_000 {
             panic!(
-                "USB clock must be 60MHz, clock is {:?}, clock source:{:?}, div:{}", 
-                freq, 
-                get_clk_usb_source(), 
+                "USB clock must be 60MHz, clock is {:?}, clock source:{:?}, div:{}",
+                freq,
+                get_clk_usb_source(),
                 get_clk_usb_div()
             );
         }
     } else {
-        panic!("USB clock is not configured, clock source:{:?}", 
+        panic!(
+            "USB clock is not configured, clock source:{:?}",
             get_clk_usb_source()
         );
     }
@@ -98,7 +99,7 @@ impl<'d, T: Instance> Driver<'d, T> {
         let mut dp = HpsysPin::new(dp.into_ref().pin_bank());
         dp.disable_interrupt();
         dp.set_as_analog();
-        
+
         init::<T>();
         Self {
             inner: MusbDriver::new(),
@@ -185,6 +186,5 @@ impl DmPin<crate::peripherals::USBC> for crate::peripherals::PA36 {
         0x2
     }
 }
-
 
 // impl SealedInstance for  {}

@@ -1,0 +1,36 @@
+# Clock domain definitions
+# Maps clock names (used in peripherals.yaml) to token types and read functions.
+
+hpsys:
+  - name: hclk
+    token: Hclk
+  - name: pclk
+    token: Pclk
+  - name: pclk2
+    token: Pclk2
+  - name: clk_peri
+    token: ClkPeri
+  - name: clk_peri_div2
+    token: ClkPeriDiv2
+  - name: clk_usb
+    token: ClkUsb
+  - name: clk_wdt
+    token: ClkWdt
+  - name: clk_rtc
+    token: ClkRtc
+  - name: clk_mpi1
+    token: ClkMpi1
+  - name: clk_mpi2
+    token: ClkMpi2
+  - name: clk_aud_pll
+    token: ClkAudPll
+  - name: clk_aud_pll_div16
+    token: ClkAudPllDiv16
+
+lpsys:
+  - name: lp_hclk
+    token: LpHclk
+    read_fn: get_lpsys_hclk_freq
+  - name: lp_mac_clk
+    token: LpMacClk
+    read_fn: get_lpsys_mac_clk_freq

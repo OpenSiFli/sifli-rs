@@ -11,16 +11,16 @@ use embassy_sync::blocking_mutex::Mutex;
 use embassy_time_driver::{Driver, TICK_HZ};
 use embassy_time_queue_utils::Queue;
 
-#[cfg(feature = "_time-driver-gptim")]
-use sifli_pac::gptim::regs;
 #[cfg(feature = "_time-driver-atim")]
 use sifli_pac::atim::regs;
+#[cfg(feature = "_time-driver-gptim")]
+use sifli_pac::gptim::regs;
 
 use crate::interrupt::typelevel::Interrupt;
+use crate::pac::tim_common::vals;
 use crate::rcc::{self, RccGetFreq};
 use crate::timer::Instance;
 use crate::{interrupt, peripherals};
-use crate::pac::tim_common::vals;
 
 #[cfg(feature = "_time-driver-atim")]
 compile_error!("ATIM time-driver is not ready");

@@ -19,14 +19,13 @@ use futures_util::future::{select, Either};
 
 use crate::dma::ChannelAndRequest;
 use crate::gpio::{AfType, AnyPin, Pull, SealedPin};
-use crate::interrupt::{self, Interrupt, typelevel::Interrupt as _};
+use crate::interrupt::{self, typelevel::Interrupt as _, Interrupt};
 use crate::mode::{Async, Blocking, Mode};
 use crate::time::Hertz;
 use crate::{rcc, Peripheral};
 
 use crate::pac::usart::Usart as Regs;
 use crate::pac::usart::{regs, vals};
-
 
 /// Interrupt handler.
 pub struct InterruptHandler<T: Instance> {
@@ -252,6 +251,18 @@ pub enum Error {
     BufferTooLong,
 }
 
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Error::Framing => write!(f, "framing error"),
+            Error::Noise => write!(f, "noise error"),
+            Error::Overrun => write!(f, "RX buffer overrun"),
+            Error::Parity => write!(f, "parity check error"),
+            Error::BufferTooLong => write!(f, "buffer too large for DMA"),
+        }
+    }
+}
+
 enum ReadCompletionEvent {
     // DMA Read transfer completed first
     DmaCompleted,
@@ -391,7 +402,10 @@ impl<'d, T: Instance> UartTx<'d, T, Async> {
     pub async fn write(&mut self, buffer: &[u8]) -> Result<(), Error> {
         let r = T::regs();
 
-        half_duplex_set_rx_tx_before_write(&r, self.duplex == Duplex::Half(HalfDuplexReadback::Readback));
+        half_duplex_set_rx_tx_before_write(
+            &r,
+            self.duplex == Duplex::Half(HalfDuplexReadback::Readback),
+        );
 
         let ch = self.tx_dma.as_mut().unwrap();
         r.cr3().modify(|reg| {
@@ -489,7 +503,10 @@ impl<'d, T: Instance, M: Mode> UartTx<'d, T, M> {
     pub fn blocking_write(&mut self, buffer: &[u8]) -> Result<(), Error> {
         let r = T::regs();
 
-        half_duplex_set_rx_tx_before_write(&r, self.duplex == Duplex::Half(HalfDuplexReadback::Readback));
+        half_duplex_set_rx_tx_before_write(
+            &r,
+            self.duplex == Duplex::Half(HalfDuplexReadback::Readback),
+        );
 
         for &b in buffer {
             while !r.isr().read().txe() {}
@@ -811,7 +828,11 @@ impl<'d, T: Instance> UartRx<'d, T, Async> {
         r
     }
 
-    async fn inner_read(&mut self, buffer: &mut [u8], enable_idle_line_detection: bool) -> Result<usize, Error> {
+    async fn inner_read(
+        &mut self,
+        buffer: &mut [u8],
+        enable_idle_line_detection: bool,
+    ) -> Result<usize, Error> {
         if buffer.is_empty() {
             return Ok(0);
         } else if buffer.len() > 0xFFFF {
@@ -821,7 +842,9 @@ impl<'d, T: Instance> UartRx<'d, T, Async> {
         let buffer_len = buffer.len();
 
         // wait for DMA to complete or IDLE line detection if requested
-        let res = self.inner_read_run(buffer, enable_idle_line_detection).await;
+        let res = self
+            .inner_read_run(buffer, enable_idle_line_detection)
+            .await;
 
         match res {
             Ok(ReadCompletionEvent::DmaCompleted) => Ok(buffer_len),
@@ -840,11 +863,12 @@ impl<'d, T: Instance> UartRx<'d, T, Blocking> {
         rx: impl Peripheral<P = impl RxdPin<T>> + 'd,
         config: Config,
     ) -> Result<Self, ConfigError> {
-        Self::new_inner(peri,
+        Self::new_inner(
+            peri,
             new_pin!(rx, AfType::new(config.rx_pull)),
             None,
             None,
-            config
+            config,
         )
     }
 
@@ -1349,7 +1373,7 @@ fn reconfigure<T: Instance>(kernel_clock: Hertz, config: &Config) -> Result<(), 
     configure::<T>(kernel_clock, config, cr.re(), cr.te())?;
 
     T::Interrupt::unpend();
-    unsafe {  T::Interrupt::enable() };
+    unsafe { T::Interrupt::enable() };
 
     Ok(())
 }
@@ -1380,7 +1404,12 @@ fn set_baudrate<T: Instance>(kernel_clock: Hertz, baudrate: u32) -> Result<(), C
     Ok(())
 }
 
-fn find_and_set_brr(r: Regs, kind: Kind, kernel_clock: Hertz, baudrate: u32) -> Result<bool, ConfigError> {
+fn find_and_set_brr(
+    r: Regs,
+    kind: Kind,
+    kernel_clock: Hertz,
+    baudrate: u32,
+) -> Result<bool, ConfigError> {
     static DIVS: [(u16, ()); 1] = [(1, ())];
 
     let (mul, brr_min, brr_max) = match kind {
@@ -1410,7 +1439,8 @@ fn find_and_set_brr(r: Regs, kind: Kind, kernel_clock: Hertz, baudrate: u32) -> 
         if brr < brr_min {
             if brr * 2 >= brr_min && kind == Kind::Uart {
                 over8 = true;
-                r.brr().write_value(regs::Brr(((brr << 1) & !0xF) | (brr & 0x07)));
+                r.brr()
+                    .write_value(regs::Brr(((brr << 1) & !0xF) | (brr & 0x07)));
                 found_brr = Some(brr);
                 break;
             }
@@ -1552,7 +1582,6 @@ fn configure<T: Instance>(
         }
 
         w.set_over8(vals::OVER8::from_bits(over8 as _));
-
     });
 
     Ok(())
@@ -1648,21 +1677,23 @@ impl<'d, T: Instance, M: Mode> embedded_hal_nb::serial::Write for Uart<'d, T, M>
     }
 }
 
+impl core::error::Error for Error {}
+
 impl embedded_io::Error for Error {
     fn kind(&self) -> embedded_io::ErrorKind {
         embedded_io::ErrorKind::Other
     }
 }
 
-impl<T:Instance, M: Mode> embedded_io::ErrorType for Uart<'_, T, M> {
+impl<T: Instance, M: Mode> embedded_io::ErrorType for Uart<'_, T, M> {
     type Error = Error;
 }
 
-impl<T:Instance, M: Mode> embedded_io::ErrorType for UartTx<'_, T, M> {
+impl<T: Instance, M: Mode> embedded_io::ErrorType for UartTx<'_, T, M> {
     type Error = Error;
 }
 
-impl<T:Instance, M: Mode> embedded_io::Write for Uart<'_, T, M> {
+impl<T: Instance, M: Mode> embedded_io::Write for Uart<'_, T, M> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.blocking_write(buf)?;
         Ok(buf.len())
@@ -1673,7 +1704,7 @@ impl<T:Instance, M: Mode> embedded_io::Write for Uart<'_, T, M> {
     }
 }
 
-impl<T:Instance, M: Mode> embedded_io::Write for UartTx<'_, T, M> {
+impl<T: Instance, M: Mode> embedded_io::Write for UartTx<'_, T, M> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.blocking_write(buf)?;
         Ok(buf.len())
@@ -1684,7 +1715,7 @@ impl<T:Instance, M: Mode> embedded_io::Write for UartTx<'_, T, M> {
     }
 }
 
-impl<T:Instance> embedded_io_async::Write for Uart<'_, T, Async> {
+impl<T: Instance> embedded_io_async::Write for Uart<'_, T, Async> {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.write(buf).await?;
         Ok(buf.len())
@@ -1695,7 +1726,7 @@ impl<T:Instance> embedded_io_async::Write for Uart<'_, T, Async> {
     }
 }
 
-impl<T:Instance> embedded_io_async::Write for UartTx<'_, T, Async> {
+impl<T: Instance> embedded_io_async::Write for UartTx<'_, T, Async> {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.write(buf).await?;
         Ok(buf.len())
@@ -1740,7 +1771,9 @@ impl State {
 }
 
 #[allow(private_interfaces)]
-pub(crate) trait SealedInstance: crate::rcc::RccEnableReset + crate::rcc::RccGetFreq {
+pub(crate) trait SealedInstance:
+    crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
+{
     fn regs() -> Regs;
     fn interrupt() -> Interrupt;
     fn kind() -> Kind;

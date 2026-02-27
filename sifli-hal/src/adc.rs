@@ -10,14 +10,14 @@ use embassy_sync::waitqueue::AtomicWaker;
 use sifli_pac::HPSYS_CFG;
 
 use crate::_generated::{FIRST_CHANNEL_PIN, VBAT_CHANNEL_ID, VOL_OFFSET, VOL_RATIO};
-use crate::{blocking_delay_us, interrupt, rcc};
-use crate::mode::{Async, Blocking, Mode};
 use crate::gpio::{self, Analog};
-use crate::interrupt::typelevel::{Binding};
+use crate::interrupt::typelevel::Binding;
 use crate::interrupt::InterruptExt;
+use crate::mode::{Async, Blocking, Mode};
 use crate::pac::gpadc::vals as AdcVals;
 use crate::pac::GPADC;
 use crate::peripherals;
+use crate::{blocking_delay_us, interrupt, rcc};
 
 static WAKER: AtomicWaker = AtomicWaker::new();
 static IRQ_DONE: AtomicBool = AtomicBool::new(false);
@@ -134,10 +134,7 @@ pub struct Adc<'d, M: Mode> {
 
 impl<'d, M: Mode> Adc<'d, M> {
     /// Common initialization logic for both blocking and async modes.
-    fn new_inner(
-        _inner: impl Peripheral<P = peripherals::GPADC> + 'd,
-        config: Config,
-    ) -> Self {
+    fn new_inner(_inner: impl Peripheral<P = peripherals::GPADC> + 'd, config: Config) -> Self {
         rcc::enable_and_reset::<peripherals::GPADC>();
         let regs = GPADC;
 
@@ -195,12 +192,14 @@ impl<'d, M: Mode> Adc<'d, M> {
         GPADC.slot(channel.id as _).modify(|r| r.set_slot_en(true));
 
         // 1. Enable the LDO that provides the reference voltage to the ADC.
-        GPADC.cfg_reg1().modify(|r| r.set_anau_gpadc_ldoref_en(true));
+        GPADC
+            .cfg_reg1()
+            .modify(|r| r.set_anau_gpadc_ldoref_en(true));
         // Manual: Wait 200us for LDO to stabilize.
         blocking_delay_us(200);
 
         // 2. Unmute ADC inputs to connect them to the external pins.
-        GPADC.cfg_reg1().modify(|r| {r.set_anau_gpadc_mute(false)});
+        GPADC.cfg_reg1().modify(|r| r.set_anau_gpadc_mute(false));
 
         // 3. Enable the main GPADC core logic.
         GPADC.ctrl_reg().modify(|r| r.set_frc_en_adc(true));
@@ -258,7 +257,9 @@ impl<'d, M: Mode> Drop for Adc<'d, M> {
     fn drop(&mut self) {
         // Ensure ADC is powered down when the driver is dropped.
         GPADC.ctrl_reg().modify(|r| r.set_frc_en_adc(false));
-        GPADC.cfg_reg1().modify(|r| r.set_anau_gpadc_ldoref_en(false));
+        GPADC
+            .cfg_reg1()
+            .modify(|r| r.set_anau_gpadc_ldoref_en(false));
         // The shared HPSYS bandgap (`EN_BG`) is not disabled here.
         // The application is responsible for managing it if it's no longer needed by any peripheral.
     }
@@ -346,7 +347,7 @@ impl<'d> Adc<'d, Async> {
 
         GPADC.ctrl_reg().modify(|r| r.set_adc_start(true));
         self.wait_for_completion().await;
-        
+
         let result = GPADC.rdata(0).read().even_slot_rdata();
 
         self.finish(ch);
@@ -356,7 +357,10 @@ impl<'d> Adc<'d, Async> {
 }
 
 #[allow(private_interfaces)]
-pub(crate) trait SealedInstance: crate::rcc::RccEnableReset + crate::rcc::RccGetFreq {}
+pub(crate) trait SealedInstance:
+    crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
+{
+}
 
 #[allow(private_bounds)]
 pub trait Instance: Peripheral<P = Self> + SealedInstance + 'static + Send {
