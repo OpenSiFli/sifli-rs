@@ -31,14 +31,18 @@ const STATUS_MATCH_TIMEOUT_POLLS: u32 = 2_000_000;
 const NOR_FLASH_MAX_3B_CAPACITY_BYTES: usize = 16 * 1024 * 1024;
 const CODE_BUS_FLASH_START: usize = 0x1000_0000;
 const CODE_BUS_FLASH_END: usize = 0x2000_0000;
+const MPI1_CODE_BUS_BASE: usize = CODE_BUS_FLASH_START;
+const MPI1_CODE_BUS_END: usize = 0x1200_0000;
+const MPI2_CODE_BUS_BASE: usize = MPI1_CODE_BUS_END;
+const MPI2_CODE_BUS_END: usize = CODE_BUS_FLASH_END;
 
 /// NOR flash WIP (Write In Progress) bit mask in status register.
 const NOR_FLASH_WIP_MASK: u32 = 0x01;
 
 #[inline(always)]
-fn running_from_code_bus_flash() -> bool {
-    let pc = running_from_code_bus_flash as *const () as usize;
-    (CODE_BUS_FLASH_START..CODE_BUS_FLASH_END).contains(&pc)
+fn running_from_instance_code_bus_flash<T: SealedInstance>() -> bool {
+    let pc = running_from_instance_code_bus_flash::<T> as *const () as usize;
+    (T::code_bus_base()..T::code_bus_end()).contains(&pc)
 }
 
 /// RAM function: save PRIMASK and disable interrupts.
@@ -296,6 +300,7 @@ fn ram_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()> {
 /// 3. Hardware status polling via CMD2 until WIP=0
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
+#[allow(clippy::too_many_arguments)]
 fn ram_program_chunk(
     regs: Regs,
     wren_cmd: u8,
@@ -476,6 +481,7 @@ fn ram_wrapper_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()
 /// RAM wrapper: Program chunk with interrupt protection.
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
+#[allow(clippy::too_many_arguments)]
 fn ram_wrapper_program_chunk(
     regs: Regs,
     wren_cmd: u8,
@@ -991,7 +997,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
             || config.capacity == 0
             || config.page_size == 0
             || config.page_size < WRITE_GRAN
-            || config.page_size % WRITE_GRAN != 0
+            || !config.page_size.is_multiple_of(WRITE_GRAN)
             || config.max_ready_polls == 0
             || (config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES
                 && config.address_size != AddressSize::FourBytes)
@@ -1000,10 +1006,17 @@ impl<'d, T: Instance> Mpi<'d, T> {
         }
 
         let mut this = self;
+        let running_from_xip = running_from_instance_code_bus_flash::<T>();
 
         if config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES {
             if let Some(cmd) = config.commands.enter_4byte_address {
-                if !ram_wrapper_issue_simple_cmd(this.regs(), cmd, config.max_ready_polls) {
+                // When executing from this instance's XIP window, changing the flash's
+                // global address mode can desynchronize instruction fetch and fault.
+                // In that case, keep the current mode and assume boot/runtime already
+                // configured a compatible 4-byte read path.
+                if !running_from_xip
+                    && !ram_wrapper_issue_simple_cmd(this.regs(), cmd, config.max_ready_polls)
+                {
                     return Err(Error::Timeout);
                 }
             }
@@ -1016,7 +1029,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
                 .unwrap_or(config.commands.ahb_read),
             _ => config.commands.ahb_read,
         };
-        if !running_from_code_bus_flash() {
+        if !running_from_xip {
             this.configure_ahb_read(ahb_read_cmd, config.address_size);
         }
 
@@ -1142,9 +1155,17 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         }
 
         // Refresh cache view for memory-mapped flash area after program/erase.
+        const DCACHE_LINE_SIZE: usize = 32;
+        let start = T::code_bus_base() + offset as usize;
+        let aligned_start = start & !(DCACHE_LINE_SIZE - 1);
+        let end = start + len;
+        let aligned_end =
+            end.saturating_add(DCACHE_LINE_SIZE - 1) & !(DCACHE_LINE_SIZE - 1);
+        let aligned_len = aligned_end - aligned_start;
+
         let mut cp = unsafe { cortex_m::Peripherals::steal() };
         cp.SCB
-            .clean_invalidate_dcache_by_address(T::code_bus_base() + offset as usize, len);
+            .clean_invalidate_dcache_by_address(aligned_start, aligned_len);
         cp.SCB.invalidate_icache();
     }
 
@@ -1270,7 +1291,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         let mut i = 0usize;
 
         // Handle unaligned head (read bytes until 4-byte aligned).
-        while i < len && (base + i) % 4 != 0 {
+        while i < len && !(base + i).is_multiple_of(4) {
             // SAFETY: Bounds are checked against `capacity` above.
             bytes[i] = unsafe { core::ptr::read_volatile((base + i) as *const u8) };
             i += 1;
@@ -1537,6 +1558,7 @@ pub(crate) trait SealedInstance:
 {
     fn regs() -> Regs;
     fn code_bus_base() -> usize;
+    fn code_bus_end() -> usize;
 }
 
 /// MPI peripheral instance.
@@ -1551,7 +1573,12 @@ impl SealedInstance for crate::peripherals::MPI1 {
 
     #[inline(always)]
     fn code_bus_base() -> usize {
-        0x1000_0000
+        MPI1_CODE_BUS_BASE
+    }
+
+    #[inline(always)]
+    fn code_bus_end() -> usize {
+        MPI1_CODE_BUS_END
     }
 }
 
@@ -1565,7 +1592,12 @@ impl SealedInstance for crate::peripherals::MPI2 {
 
     #[inline(always)]
     fn code_bus_base() -> usize {
-        0x1200_0000
+        MPI2_CODE_BUS_BASE
+    }
+
+    #[inline(always)]
+    fn code_bus_end() -> usize {
+        MPI2_CODE_BUS_END
     }
 }
 
