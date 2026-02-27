@@ -700,6 +700,16 @@ pub enum FifoClear {
     RxTx,
 }
 
+/// Select which manual command slot to configure/use.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CommandSlot {
+    /// Command slot 1.
+    Cmd1,
+    /// Command slot 2.
+    Cmd2,
+}
+
 /// Configuration of one manual command sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CommandConfig {
@@ -825,57 +835,49 @@ impl<'d, T: Instance> Mpi<'d, T> {
         }
     }
 
-    /// Configure command 1 format.
-    pub fn configure_command(&mut self, cfg: CommandConfig) -> Result<(), Error> {
+    /// Configure command format for a selected command slot.
+    pub fn configure_command_for(
+        &mut self,
+        slot: CommandSlot,
+        cfg: CommandConfig,
+    ) -> Result<(), Error> {
         if cfg.dummy_cycles > 31 {
             return Err(Error::InvalidConfiguration);
         }
-        self.regs().ccr1().modify(|w| {
-            w.set_fmode(cfg.function_mode.is_write());
-            w.set_dmode(cfg.data_mode.bits());
-            w.set_dcyc(cfg.dummy_cycles);
-            w.set_absize(cfg.alternate_size.bits());
-            w.set_abmode(cfg.alternate_mode.bits());
-            w.set_adsize(cfg.address_size.bits());
-            w.set_admode(cfg.address_mode.bits());
-            w.set_imode(cfg.instruction_mode.bits());
-        });
-        Ok(())
-    }
-
-    /// Configure command 2 format.
-    pub fn configure_command2(&mut self, cfg: CommandConfig) -> Result<(), Error> {
-        if cfg.dummy_cycles > 31 {
-            return Err(Error::InvalidConfiguration);
+        match slot {
+            CommandSlot::Cmd1 => self.regs().ccr1().modify(|w| {
+                w.set_fmode(cfg.function_mode.is_write());
+                w.set_dmode(cfg.data_mode.bits());
+                w.set_dcyc(cfg.dummy_cycles);
+                w.set_absize(cfg.alternate_size.bits());
+                w.set_abmode(cfg.alternate_mode.bits());
+                w.set_adsize(cfg.address_size.bits());
+                w.set_admode(cfg.address_mode.bits());
+                w.set_imode(cfg.instruction_mode.bits());
+            }),
+            CommandSlot::Cmd2 => self.regs().ccr2().modify(|w| {
+                w.set_fmode(cfg.function_mode.is_write());
+                w.set_dmode(cfg.data_mode.bits());
+                w.set_dcyc(cfg.dummy_cycles);
+                w.set_absize(cfg.alternate_size.bits());
+                w.set_abmode(cfg.alternate_mode.bits());
+                w.set_adsize(cfg.address_size.bits());
+                w.set_admode(cfg.address_mode.bits());
+                w.set_imode(cfg.instruction_mode.bits());
+            }),
         }
-        self.regs().ccr2().modify(|w| {
-            w.set_fmode(cfg.function_mode.is_write());
-            w.set_dmode(cfg.data_mode.bits());
-            w.set_dcyc(cfg.dummy_cycles);
-            w.set_absize(cfg.alternate_size.bits());
-            w.set_abmode(cfg.alternate_mode.bits());
-            w.set_adsize(cfg.address_size.bits());
-            w.set_admode(cfg.address_mode.bits());
-            w.set_imode(cfg.instruction_mode.bits());
-        });
         Ok(())
     }
 
-    /// Set command 1 data length in bytes.
-    pub fn set_data_len(&mut self, len: usize) -> Result<(), Error> {
+    /// Set command data length in bytes for a selected command slot.
+    pub fn set_data_len_for(&mut self, slot: CommandSlot, len: usize) -> Result<(), Error> {
         if len == 0 || len > MAX_DLEN_BYTES {
             return Err(Error::InvalidLength);
         }
-        self.regs().dlr1().write(|w| w.set_dlen((len - 1) as u32));
-        Ok(())
-    }
-
-    /// Set command 2 data length in bytes.
-    pub fn set_data_len2(&mut self, len: usize) -> Result<(), Error> {
-        if len == 0 || len > MAX_DLEN_BYTES {
-            return Err(Error::InvalidLength);
+        match slot {
+            CommandSlot::Cmd1 => self.regs().dlr1().write(|w| w.set_dlen((len - 1) as u32)),
+            CommandSlot::Cmd2 => self.regs().dlr2().write(|w| w.set_dlen((len - 1) as u32)),
         }
-        self.regs().dlr2().write(|w| w.set_dlen((len - 1) as u32));
         Ok(())
     }
 
@@ -912,8 +914,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
     /// Configure command/address for command 1, then wait for transfer complete.
     ///
     /// This is a simple blocking command that waits for the transfer complete flag (TCF).
-    /// For XIP-safe operations that need to wait for flash busy, use
-    /// [`issue_cmd_with_status_poll`](Self::issue_cmd_with_status_poll) instead.
+    /// For XIP-safe flash busy polling, use [`MpiNorFlash::wait_ready`].
     pub fn set_command(&mut self, cmd: u8, addr: u32) -> Result<(), Error> {
         let regs = self.regs();
         regs.scr().write(|w| w.set_tcfc(true));
@@ -930,15 +931,18 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Err(Error::Timeout)
     }
 
-    /// Configure command/address only, without waiting for transfer completion.
-    pub fn configure_command_no_wait(&mut self, cmd: u8, addr: u32, is_cmd2: bool) {
+    /// Set command/address only, without waiting for transfer completion.
+    pub fn set_command_no_wait(&mut self, slot: CommandSlot, cmd: u8, addr: u32) {
         let regs = self.regs();
-        if is_cmd2 {
-            regs.ar2().write(|w| w.set_addr(addr));
-            regs.cmdr2().write(|w| w.set_cmd(cmd));
-        } else {
-            regs.ar1().write(|w| w.set_addr(addr));
-            regs.cmdr1().write(|w| w.set_cmd(cmd));
+        match slot {
+            CommandSlot::Cmd1 => {
+                regs.ar1().write(|w| w.set_addr(addr));
+                regs.cmdr1().write(|w| w.set_cmd(cmd));
+            }
+            CommandSlot::Cmd2 => {
+                regs.ar2().write(|w| w.set_addr(addr));
+                regs.cmdr2().write(|w| w.set_cmd(cmd));
+            }
         }
     }
 
@@ -953,7 +957,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
             || config.capacity == 0
             || config.page_size == 0
             || config.page_size < WRITE_GRAN
-            || config.read_dummy_cycles > 31
+            || config.page_size % WRITE_GRAN != 0
             || config.max_ready_polls == 0
         {
             return Err(Error::InvalidConfiguration);
@@ -969,8 +973,6 @@ pub struct NorFlashCommandSet {
     pub write_enable: u8,
     /// Read status register command.
     pub read_status: u8,
-    /// Read data command.
-    pub read: u8,
     /// Page program command.
     pub page_program: u8,
     /// Sector erase command.
@@ -979,16 +981,22 @@ pub struct NorFlashCommandSet {
     pub read_jedec_id: u8,
 }
 
-impl Default for NorFlashCommandSet {
-    fn default() -> Self {
+impl NorFlashCommandSet {
+    /// Common SPI NOR command set.
+    pub const fn common_spi_nor() -> Self {
         Self {
             write_enable: 0x06,
             read_status: 0x05,
-            read: 0x03,
             page_program: 0x02,
             sector_erase: 0x20,
             read_jedec_id: 0x9f,
         }
+    }
+}
+
+impl Default for NorFlashCommandSet {
+    fn default() -> Self {
+        Self::common_spi_nor()
     }
 }
 
@@ -1001,8 +1009,6 @@ pub struct NorFlashConfig {
     pub page_size: usize,
     /// Address byte width used by commands.
     pub address_size: AddressSize,
-    /// Dummy cycles used by the read command.
-    pub read_dummy_cycles: u8,
     /// Max number of polls for waiting WIP=0.
     pub max_ready_polls: u32,
     /// Command opcodes.
@@ -1016,16 +1022,8 @@ impl NorFlashConfig {
             capacity,
             page_size: 256,
             address_size: AddressSize::ThreeBytes,
-            read_dummy_cycles: 0,
             max_ready_polls: 2_000_000,
-            commands: NorFlashCommandSet {
-                write_enable: 0x06,
-                read_status: 0x05,
-                read: 0x03,
-                page_program: 0x02,
-                sector_erase: 0x20,
-                read_jedec_id: 0x9f,
-            },
+            commands: NorFlashCommandSet::common_spi_nor(),
         }
     }
 }
