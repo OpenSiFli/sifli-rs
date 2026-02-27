@@ -13,9 +13,9 @@
 //! handle the complete MPI command sequences without any flash code fetches during the
 //! critical sections.
 
+use core::arch::asm;
 use core::cmp::min;
 use core::hint::spin_loop;
-use core::arch::asm;
 
 use embassy_hal_internal::{into_ref, PeripheralRef};
 use embedded_storage::nor_flash::{
@@ -28,11 +28,18 @@ use crate::{rcc, Peripheral};
 const FIFO_SIZE_BYTES: usize = 64;
 const MAX_DLEN_BYTES: usize = 0x000f_ffff + 1;
 const STATUS_MATCH_TIMEOUT_POLLS: u32 = 2_000_000;
+const NOR_FLASH_MAX_3B_CAPACITY_BYTES: usize = 16 * 1024 * 1024;
 const CODE_BUS_FLASH_START: usize = 0x1000_0000;
 const CODE_BUS_FLASH_END: usize = 0x2000_0000;
 
 /// NOR flash WIP (Write In Progress) bit mask in status register.
 const NOR_FLASH_WIP_MASK: u32 = 0x01;
+
+#[inline(always)]
+fn running_from_code_bus_flash() -> bool {
+    let pc = running_from_code_bus_flash as *const () as usize;
+    (CODE_BUS_FLASH_START..CODE_BUS_FLASH_END).contains(&pc)
+}
 
 /// RAM function: save PRIMASK and disable interrupts.
 #[inline(always)]
@@ -526,6 +533,16 @@ fn ram_wrapper_erase_sector(
     result
 }
 
+/// RAM wrapper: Issue a simple command with interrupt protection.
+#[inline(never)]
+#[link_section = ".data.ramfunc"]
+fn ram_wrapper_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool {
+    let primask = ram_irq_save_disable();
+    let result = ram_issue_simple_cmd(regs, cmd, max_polls);
+    ram_irq_restore(primask);
+    result
+}
+
 /// RAM wrapper: Wait until flash is ready (WIP=0) with interrupt protection.
 ///
 /// This performs the entire polling loop in RAM to avoid XIP conflicts.
@@ -791,14 +808,31 @@ impl<'d, T: Instance> Mpi<'d, T> {
         });
         regs.abr1().write(|w| w.set_abyte(0xff));
         regs.hrabr().write(|w| w.set_abyte(0xff));
+        self.configure_ahb_read(0x03, AddressSize::ThreeBytes);
         regs.cr().modify(|w| w.set_en(true));
+    }
+
+    /// Configure default AHB memory-mapped read timing/format.
+    ///
+    /// This aligns memory-mapped reads (`code_bus_base`) with the selected address width.
+    pub fn configure_ahb_read(&mut self, read_cmd: u8, address_size: AddressSize) {
+        let regs = self.regs();
+        regs.hrccr().modify(|w| {
+            w.set_dmode(1); // single-line data
+            w.set_dcyc(0); // normal-read opcode, no dummy cycle
+            w.set_absize(0);
+            w.set_abmode(0);
+            w.set_adsize(address_size.bits());
+            w.set_admode(1); // single-line address
+            w.set_imode(1); // single-line instruction
+        });
+        regs.hcmdr().modify(|w| w.set_rcmd(read_cmd));
     }
 
     #[inline(always)]
     fn regs(&self) -> Regs {
         T::regs()
     }
-
 
     /// Enable or disable MPI.
     pub fn enable(&mut self, enable: bool) {
@@ -959,10 +993,34 @@ impl<'d, T: Instance> Mpi<'d, T> {
             || config.page_size < WRITE_GRAN
             || config.page_size % WRITE_GRAN != 0
             || config.max_ready_polls == 0
+            || (config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES
+                && config.address_size != AddressSize::FourBytes)
         {
             return Err(Error::InvalidConfiguration);
         }
-        Ok(MpiNorFlash { mpi: self, config })
+
+        let mut this = self;
+
+        if config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES {
+            if let Some(cmd) = config.commands.enter_4byte_address {
+                if !ram_wrapper_issue_simple_cmd(this.regs(), cmd, config.max_ready_polls) {
+                    return Err(Error::Timeout);
+                }
+            }
+        }
+
+        let ahb_read_cmd = match config.address_size {
+            AddressSize::FourBytes => config
+                .commands
+                .ahb_read_4byte
+                .unwrap_or(config.commands.ahb_read),
+            _ => config.commands.ahb_read,
+        };
+        if !running_from_code_bus_flash() {
+            this.configure_ahb_read(ahb_read_cmd, config.address_size);
+        }
+
+        Ok(MpiNorFlash { mpi: this, config })
     }
 }
 
@@ -971,12 +1029,22 @@ impl<'d, T: Instance> Mpi<'d, T> {
 pub struct NorFlashCommandSet {
     /// Write enable command.
     pub write_enable: u8,
+    /// Enter 4-byte address mode command. `None` means skip.
+    pub enter_4byte_address: Option<u8>,
     /// Read status register command.
     pub read_status: u8,
+    /// AHB memory-mapped read command.
+    pub ahb_read: u8,
+    /// Optional 4-byte AHB memory-mapped read command.
+    pub ahb_read_4byte: Option<u8>,
     /// Page program command.
     pub page_program: u8,
+    /// Optional 4-byte page program command.
+    pub page_program_4byte: Option<u8>,
     /// Sector erase command.
     pub sector_erase: u8,
+    /// Optional 4-byte sector erase command.
+    pub sector_erase_4byte: Option<u8>,
     /// Read JEDEC ID command.
     pub read_jedec_id: u8,
 }
@@ -986,9 +1054,14 @@ impl NorFlashCommandSet {
     pub const fn common_spi_nor() -> Self {
         Self {
             write_enable: 0x06,
+            enter_4byte_address: Some(0xB7),
             read_status: 0x05,
+            ahb_read: 0x03,
+            ahb_read_4byte: Some(0x13),
             page_program: 0x02,
+            page_program_4byte: Some(0x12),
             sector_erase: 0x20,
+            sector_erase_4byte: Some(0x21),
             read_jedec_id: 0x9f,
         }
     }
@@ -1083,6 +1156,28 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         self.config.address_size.bits()
     }
 
+    fn page_program_cmd(&self) -> u8 {
+        if self.config.address_size == AddressSize::FourBytes {
+            self.config
+                .commands
+                .page_program_4byte
+                .unwrap_or(self.config.commands.page_program)
+        } else {
+            self.config.commands.page_program
+        }
+    }
+
+    fn sector_erase_cmd(&self) -> u8 {
+        if self.config.address_size == AddressSize::FourBytes {
+            self.config
+                .commands
+                .sector_erase_4byte
+                .unwrap_or(self.config.commands.sector_erase)
+        } else {
+            self.config.commands.sector_erase
+        }
+    }
+
     /// Read flash status register low byte.
     ///
     /// This method is XIP-safe: it uses RAM-resident code for the entire operation,
@@ -1129,7 +1224,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         if ram_wrapper_program_chunk(
             self.regs(),
             self.config.commands.write_enable,
-            self.config.commands.page_program,
+            self.page_program_cmd(),
             self.config.commands.read_status,
             addr,
             self.addr_size_bits(),
@@ -1146,7 +1241,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         if ram_wrapper_erase_sector(
             self.regs(),
             self.config.commands.write_enable,
-            self.config.commands.sector_erase,
+            self.sector_erase_cmd(),
             self.config.commands.read_status,
             addr,
             self.addr_size_bits(),
