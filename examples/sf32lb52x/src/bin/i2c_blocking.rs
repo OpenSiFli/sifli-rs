@@ -53,7 +53,14 @@ async fn main(_spawner: Spawner) {
         let bmr = i2c3.bmr().read();
         let lcr = i2c3.lcr().read();
         let wcr = i2c3.wcr().read();
-        let _ = writeln!(usart, "CR: 0x{:08X} MODE={}, SCLE={}, IUE={}", cr.0, cr.mode(), cr.scle(), cr.iue());
+        let _ = writeln!(
+            usart,
+            "CR: 0x{:08X} MODE={}, SCLE={}, IUE={}",
+            cr.0,
+            cr.mode(),
+            cr.scle(),
+            cr.iue()
+        );
         let _ = writeln!(usart, "BMR: SCL={}, SDA={}", bmr.scl(), bmr.sda());
         let _ = writeln!(usart, "LCR: FLV={}, SLV={}", lcr.flv(), lcr.slv());
         let _ = writeln!(usart, "WCR: CNT={}", wcr.cnt());
@@ -69,8 +76,15 @@ async fn main(_spawner: Spawner) {
 
         // Check SR after probe
         let sr = sifli_hal::pac::I2C3.sr().read();
-        let _ = writeln!(usart, "SR after: 0x{:08X} TE={} NACK={} BED={} UB={}",
-            sr.0, sr.te(), sr.nack(), sr.bed(), sr.ub());
+        let _ = writeln!(
+            usart,
+            "SR after: 0x{:08X} TE={} NACK={} BED={} UB={}",
+            sr.0,
+            sr.te(),
+            sr.nack(),
+            sr.bed(),
+            sr.ub()
+        );
     }
 
     // Test a known device address (0x29 was found in previous scan)
@@ -82,8 +96,15 @@ async fn main(_spawner: Spawner) {
         let _ = writeln!(usart, "{:?} ({}ms)", defmt::Debug2Format(&result), dt);
 
         let sr = sifli_hal::pac::I2C3.sr().read();
-        let _ = writeln!(usart, "SR after: 0x{:08X} TE={} NACK={} BED={} UB={}",
-            sr.0, sr.te(), sr.nack(), sr.bed(), sr.ub());
+        let _ = writeln!(
+            usart,
+            "SR after: 0x{:08X} TE={} NACK={} BED={} UB={}",
+            sr.0,
+            sr.te(),
+            sr.nack(),
+            sr.bed(),
+            sr.ub()
+        );
     }
 
     // Test 0x30 (MMC5603)
@@ -95,8 +116,15 @@ async fn main(_spawner: Spawner) {
         let _ = writeln!(usart, "{:?} ({}ms)", defmt::Debug2Format(&result), dt);
 
         let sr = sifli_hal::pac::I2C3.sr().read();
-        let _ = writeln!(usart, "SR after: 0x{:08X} TE={} NACK={} BED={} UB={}",
-            sr.0, sr.te(), sr.nack(), sr.bed(), sr.ub());
+        let _ = writeln!(
+            usart,
+            "SR after: 0x{:08X} TE={} NACK={} BED={} UB={}",
+            sr.0,
+            sr.te(),
+            sr.nack(),
+            sr.bed(),
+            sr.ub()
+        );
     }
 
     // If any device responded, try reading registers

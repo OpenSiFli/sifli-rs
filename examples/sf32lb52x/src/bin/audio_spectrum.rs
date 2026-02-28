@@ -16,13 +16,13 @@ use core::mem::MaybeUninit;
 use embassy_executor::Spawner;
 use embassy_time::Delay;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{self, AudioAdc};
 use sifli_hal::bind_interrupts;
+use sifli_hal::gpio;
 use sifli_hal::lcdc::{self, SpiConfig};
 use sifli_hal::rcc::{ConfigBuilder, Dll, DllStage, Sysclk};
 use sifli_hal::time::mhz;
-use sifli_hal::gpio;
 
 use display_driver::bus::QspiFlashBus;
 use display_driver::panel::reset::LCDResetOption;
@@ -32,7 +32,7 @@ use display_driver_co5300::{
     Co5300,
 };
 
-use libm::{sinf, cosf, sqrtf, log10f};
+use libm::{cosf, log10f, sinf, sqrtf};
 
 // ============================================================================
 // Display config
@@ -154,7 +154,11 @@ fn compute_bar_boundaries() -> [usize; NUM_BARS + 1] {
         // Logarithmic mapping: emphasize low frequencies
         let frac = i as f32 / NUM_BARS as f32;
         let bin = libm::powf(half, frac) as usize;
-        bounds[i] = if i == 0 { 1 } else { bin.max(bounds[i - 1] + 1).min(FFT_N / 2) };
+        bounds[i] = if i == 0 {
+            1
+        } else {
+            bin.max(bounds[i - 1] + 1).min(FFT_N / 2)
+        };
     }
     bounds
 }
@@ -343,7 +347,15 @@ async fn main(_spawner: Spawner) {
     };
 
     let lcdc_inst = lcdc::Lcdc::new_qspi(
-        p.LCDC1, Irqs, p.PA2, p.PA3, p.PA4, p.PA5, p.PA6, p.PA7, p.PA8,
+        p.LCDC1,
+        Irqs,
+        p.PA2,
+        p.PA3,
+        p.PA4,
+        p.PA5,
+        p.PA6,
+        p.PA7,
+        p.PA8,
         lcdc_config,
     );
     let disp_bus = QspiFlashBus::new(lcdc_inst);
@@ -495,7 +507,13 @@ async fn main(_spawner: Spawner) {
         let grid_color = rgb565(25, 25, 25);
         for i in 0..=6 {
             let y = SPECTRUM_BOTTOM - (i * SPECTRUM_HEIGHT / 6);
-            hline(fb, bar_x_start - 5, bar_x_start + total_bar_width + 5, y, grid_color);
+            hline(
+                fb,
+                bar_x_start - 5,
+                bar_x_start + total_bar_width + 5,
+                y,
+                grid_color,
+            );
         }
 
         // Draw bars
@@ -528,7 +546,14 @@ async fn main(_spawner: Spawner) {
         // 8. Render VU meter
         let vu_x_start = 50;
         let vu_width = WIDTH_I - 70;
-        fill_rect(fb, vu_x_start, VU_TOP, vu_width, VU_HEIGHT, rgb565(15, 15, 15));
+        fill_rect(
+            fb,
+            vu_x_start,
+            VU_TOP,
+            vu_width,
+            VU_HEIGHT,
+            rgb565(15, 15, 15),
+        );
 
         let vu_fill = (vu_level * vu_width as f32) as i32;
         // VU gradient: green → yellow → red
@@ -549,7 +574,13 @@ async fn main(_spawner: Spawner) {
         // VU border
         let border_color = rgb565(80, 80, 80);
         hline(fb, vu_x_start, vu_x_start + vu_width, VU_TOP, border_color);
-        hline(fb, vu_x_start, vu_x_start + vu_width, VU_TOP + VU_HEIGHT - 1, border_color);
+        hline(
+            fb,
+            vu_x_start,
+            vu_x_start + vu_width,
+            VU_TOP + VU_HEIGHT - 1,
+            border_color,
+        );
 
         // 9. Send frame to display
         display.write_frame(fb).await.unwrap();

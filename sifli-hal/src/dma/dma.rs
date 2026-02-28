@@ -212,7 +212,9 @@ impl AnyChannel {
             .write_value(pac::dmac::regs::Cpar(peri_addr));
 
         r.cm0ar(channel_num)
-            .write_value(pac::dmac::regs::Cm0ar(crate::to_system_bus_addr(mem_addr as _) as _));
+            .write_value(pac::dmac::regs::Cm0ar(
+                crate::to_system_bus_addr(mem_addr as _) as _,
+            ));
         r.cndtr(channel_num)
             .write_value(pac::dmac::regs::Cndtr(ndtr as _));
         r.cselr(channel_num / 4)

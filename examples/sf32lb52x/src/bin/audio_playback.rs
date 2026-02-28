@@ -15,7 +15,7 @@ use panic_probe as _;
 
 use embassy_executor::Spawner;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{self, AudioDac};
 use sifli_hal::bind_interrupts;
 
@@ -45,14 +45,11 @@ async fn main(_spawner: Spawner) {
     );
 
     // Interpret PCM bytes as u32 slice (already aligned: L16+R16 = u32)
-    let pcm_samples: &[u32] = unsafe {
-        core::slice::from_raw_parts(
-            PCM_DATA.as_ptr() as *const u32,
-            PCM_DATA.len() / 4,
-        )
-    };
+    let pcm_samples: &[u32] =
+        unsafe { core::slice::from_raw_parts(PCM_DATA.as_ptr() as *const u32, PCM_DATA.len() / 4) };
 
-    info!("Audio playback: {} samples ({} ms), looping with 1s gap",
+    info!(
+        "Audio playback: {} samples ({} ms), looping with 1s gap",
         pcm_samples.len(),
         pcm_samples.len() as u64 * 1000 / 48000
     );

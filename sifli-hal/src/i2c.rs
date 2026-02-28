@@ -877,9 +877,9 @@ impl embedded_hal_1::i2c::Error for Error {
         match *self {
             Error::Bus => embedded_hal_1::i2c::ErrorKind::Bus,
             Error::Arbitration => embedded_hal_1::i2c::ErrorKind::ArbitrationLoss,
-            Error::Nack => {
-                embedded_hal_1::i2c::ErrorKind::NoAcknowledge(embedded_hal_1::i2c::NoAcknowledgeSource::Unknown)
-            }
+            Error::Nack => embedded_hal_1::i2c::ErrorKind::NoAcknowledge(
+                embedded_hal_1::i2c::NoAcknowledgeSource::Unknown,
+            ),
             Error::Overrun => embedded_hal_1::i2c::ErrorKind::Overrun,
             _ => embedded_hal_1::i2c::ErrorKind::Other,
         }
@@ -1132,7 +1132,9 @@ impl State {
 }
 
 #[allow(private_interfaces)]
-pub(crate) trait SealedInstance: crate::rcc::RccEnableReset + crate::rcc::RccGetFreq {
+pub(crate) trait SealedInstance:
+    crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
+{
     fn regs() -> Regs;
     fn state() -> &'static State;
 }

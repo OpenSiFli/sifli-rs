@@ -87,9 +87,12 @@ impl SampleRate {
     /// Required PLL frequency for this sample rate.
     pub fn pll_freq(&self) -> AudPllFreq {
         match self {
-            Self::Hz8000 | Self::Hz16000 | Self::Hz32000 | Self::Hz48000 | Self::Hz96000 | Self::Hz192000 => {
-                AudPllFreq::Mhz49_152
-            }
+            Self::Hz8000
+            | Self::Hz16000
+            | Self::Hz32000
+            | Self::Hz48000
+            | Self::Hz96000
+            | Self::Hz192000 => AudPllFreq::Mhz49_152,
             Self::Hz11025 | Self::Hz22050 | Self::Hz44100 | Self::Hz88200 | Self::Hz176400 => {
                 AudPllFreq::Mhz45_1584
             }
@@ -101,17 +104,17 @@ impl SampleRate {
     /// PLL_freq / dac_div = sample_rate.
     pub(crate) fn dac_div(&self) -> u16 {
         match self {
-            Self::Hz8000 => 6144,    // 49152000 / 8000
-            Self::Hz11025 => 4096,   // 45158400 / 11025
-            Self::Hz16000 => 3072,   // 49152000 / 16000
-            Self::Hz22050 => 2048,   // 45158400 / 22050
-            Self::Hz32000 => 1536,   // 49152000 / 32000
-            Self::Hz44100 => 1024,   // 45158400 / 44100
-            Self::Hz48000 => 1024,   // 49152000 / 48000
-            Self::Hz88200 => 512,    // 45158400 / 88200
-            Self::Hz96000 => 512,    // 49152000 / 96000
-            Self::Hz176400 => 256,   // 45158400 / 176400
-            Self::Hz192000 => 256,   // 49152000 / 192000
+            Self::Hz8000 => 6144,  // 49152000 / 8000
+            Self::Hz11025 => 4096, // 45158400 / 11025
+            Self::Hz16000 => 3072, // 49152000 / 16000
+            Self::Hz22050 => 2048, // 45158400 / 22050
+            Self::Hz32000 => 1536, // 49152000 / 32000
+            Self::Hz44100 => 1024, // 45158400 / 44100
+            Self::Hz48000 => 1024, // 49152000 / 48000
+            Self::Hz88200 => 512,  // 45158400 / 88200
+            Self::Hz96000 => 512,  // 49152000 / 96000
+            Self::Hz176400 => 256, // 45158400 / 176400
+            Self::Hz192000 => 256, // 49152000 / 192000
         }
     }
 
@@ -245,9 +248,7 @@ impl AudioPll {
         let mut delta: u32 = 8;
         while delta != 0 {
             codec.pll_cfg0().modify(|w| w.set_fc_vco(0));
-            codec
-                .pll_cfg0()
-                .modify(|w| w.set_fc_vco(fc_vco as u8));
+            codec.pll_cfg0().modify(|w| w.set_fc_vco(fc_vco as u8));
             codec.pll_cal_cfg().modify(|w| w.set_en(true));
             let mut cal_timeout = 100_000u32;
             while !codec.pll_cal_cfg().read().done() && cal_timeout > 0 {
@@ -307,9 +308,7 @@ impl AudioPll {
             w.set_sdmin_bypass(true);
         });
         codec.pll_cfg3().modify(|w| w.set_sdm_update(true));
-        codec
-            .pll_cfg3()
-            .modify(|w| w.set_sdmin_bypass(false));
+        codec.pll_cfg3().modify(|w| w.set_sdmin_bypass(false));
         codec.pll_cfg2().modify(|w| w.set_rstb(false));
         delay_us(50);
         codec.pll_cfg2().modify(|w| w.set_rstb(true));

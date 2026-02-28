@@ -26,7 +26,7 @@ const LTR_PART_ID: u8 = 0x86; // Part ID (expect 0xA0)
 const LTR_MANUFAC_ID: u8 = 0x87; // Manufacturer ID (expect 0x05)
 const LTR_ALS_STATUS: u8 = 0x8C; // ALS status
 const LTR_ALS_DATA_CH1_0: u8 = 0x88; // CH1 low byte (read CH1 first, then CH0)
-// CH1 high = 0x89, CH0 low = 0x8A, CH0 high = 0x8B
+                                     // CH1 high = 0x89, CH0 low = 0x8A, CH0 high = 0x8B
 
 // ALS_CONTR register bits
 const ALS_MODE_ACTIVE: u8 = 0x01; // Bit 0: active mode
@@ -37,19 +37,29 @@ const ALS_GAIN_48X: u8 = 0x18; // gain = 48x
 const ALS_GAIN_96X: u8 = 0x1C; // gain = 96x (0.01-600 lux)
 
 /// Read a single register
-fn read_reg(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, reg: u8) -> Result<u8, i2c::Error> {
+fn read_reg(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    reg: u8,
+) -> Result<u8, i2c::Error> {
     let mut buf = [0u8; 1];
     i2c.blocking_write_read(LTR_ADDR, &[reg], &mut buf)?;
     Ok(buf[0])
 }
 
 /// Write a single register
-fn write_reg(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, reg: u8, val: u8) -> Result<(), i2c::Error> {
+fn write_reg(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    reg: u8,
+    val: u8,
+) -> Result<(), i2c::Error> {
     i2c.blocking_write(LTR_ADDR, &[reg, val])
 }
 
 /// Initialize LTR-303: 1x gain, 100ms integration, 500ms measurement rate
-fn init_ltr303(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, usart: &mut impl Write) -> bool {
+fn init_ltr303(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    usart: &mut impl Write,
+) -> bool {
     // Check Part ID
     match read_reg(i2c, LTR_PART_ID) {
         Ok(id) => {
@@ -74,13 +84,18 @@ fn init_ltr303(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>
     // ALS_CONTR: Gain 1x, Active mode
     let _ = write_reg(i2c, LTR_ALS_CONTR, ALS_GAIN_1X | ALS_MODE_ACTIVE);
 
-    let _ = writeln!(usart, "LTR-303 initialized (1x gain, 100ms integration, 500ms rate)");
+    let _ = writeln!(
+        usart,
+        "LTR-303 initialized (1x gain, 100ms integration, 500ms rate)"
+    );
     true
 }
 
 /// Read ALS data (CH0 = visible+IR, CH1 = IR only)
 /// Returns (ch0, ch1) raw values, or None if no new data
-fn read_ltr303(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>) -> Option<(u16, u16)> {
+fn read_ltr303(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+) -> Option<(u16, u16)> {
     // Check status
     let status = read_reg(i2c, LTR_ALS_STATUS).ok()?;
     if status & 0x04 == 0 {
@@ -90,7 +105,8 @@ fn read_ltr303(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>
     // Must read CH1 first, then CH0 (per datasheet)
     // Read 4 bytes starting from CH1_0 (0x88): CH1_L, CH1_H, CH0_L, CH0_H
     let mut buf = [0u8; 4];
-    i2c.blocking_write_read(LTR_ADDR, &[LTR_ALS_DATA_CH1_0], &mut buf).ok()?;
+    i2c.blocking_write_read(LTR_ADDR, &[LTR_ALS_DATA_CH1_0], &mut buf)
+        .ok()?;
 
     let ch1 = (buf[1] as u16) << 8 | buf[0] as u16;
     let ch0 = (buf[3] as u16) << 8 | buf[2] as u16;
@@ -123,7 +139,11 @@ fn calculate_lux(ch0: u16, ch1: u16) -> u32 {
     } else {
         // CH1 > CH0: dominant IR source (e.g., incandescent, dark with IR noise)
         // Return a rough estimate based on visible portion
-        if c0 > c1 { 0 } else { c0 / 10 }
+        if c0 > c1 {
+            0
+        } else {
+            c0 / 10
+        }
     }
 }
 
@@ -158,7 +178,9 @@ async fn main(_spawner: Spawner) {
     // Initialize sensor
     if !init_ltr303(&mut i2c, &mut usart) {
         let _ = writeln!(usart, "Failed to initialize LTR-303!");
-        loop { Timer::after_secs(1).await; }
+        loop {
+            Timer::after_secs(1).await;
+        }
     }
 
     // Wait for first measurement
@@ -171,10 +193,16 @@ async fn main(_spawner: Spawner) {
     loop {
         if let Some((ch0, ch1)) = read_ltr303(&mut i2c) {
             let lux = calculate_lux(ch0, ch1);
-            let _ = writeln!(usart,
+            let _ = writeln!(
+                usart,
                 "CH0={:5} CH1={:5} ratio={:3}% lux~{:5}",
-                ch0, ch1,
-                if ch0 > 0 { (ch1 as u32 * 100 / ch0 as u32) as u16 } else { 0 },
+                ch0,
+                ch1,
+                if ch0 > 0 {
+                    (ch1 as u32 * 100 / ch0 as u32) as u16
+                } else {
+                    0
+                },
                 lux,
             );
 
@@ -188,8 +216,16 @@ async fn main(_spawner: Spawner) {
                     _ => ALS_GAIN_96X,
                 };
                 let _ = write_reg(&mut i2c, LTR_ALS_CONTR, gain_val | ALS_MODE_ACTIVE);
-                let _ = writeln!(usart, "  -> Gain increased to {}x",
-                    match gain { 1 => 4, 2 => 8, 3 => 48, _ => 96 });
+                let _ = writeln!(
+                    usart,
+                    "  -> Gain increased to {}x",
+                    match gain {
+                        1 => 4,
+                        2 => 8,
+                        3 => 48,
+                        _ => 96,
+                    }
+                );
             } else if ch0 > 50000 && gain > 0 {
                 gain -= 1;
                 let gain_val = match gain {
@@ -199,8 +235,16 @@ async fn main(_spawner: Spawner) {
                     _ => ALS_GAIN_48X,
                 };
                 let _ = write_reg(&mut i2c, LTR_ALS_CONTR, gain_val | ALS_MODE_ACTIVE);
-                let _ = writeln!(usart, "  -> Gain decreased to {}x",
-                    match gain { 0 => 1, 1 => 4, 2 => 8, _ => 48 });
+                let _ = writeln!(
+                    usart,
+                    "  -> Gain decreased to {}x",
+                    match gain {
+                        0 => 1,
+                        1 => 4,
+                        2 => 8,
+                        _ => 48,
+                    }
+                );
             }
         }
 

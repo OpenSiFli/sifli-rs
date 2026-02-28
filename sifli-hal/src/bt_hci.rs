@@ -30,7 +30,9 @@ use bt_hci::cmd;
 use bt_hci::controller::{Controller, ControllerCmdAsync, ControllerCmdSync, ExternalController};
 use bt_hci::data;
 use bt_hci::transport::{Transport, WithIndicator};
-use bt_hci::{ControllerToHostPacket, FixedSizeValue, HostToControllerPacket, ReadHci, ReadHciError, WriteHci};
+use bt_hci::{
+    ControllerToHostPacket, FixedSizeValue, HostToControllerPacket, ReadHci, ReadHciError, WriteHci,
+};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embedded_io::ReadExactError;
@@ -398,10 +400,7 @@ impl<const SLOTS: usize> Controller for BleController<SLOTS> {
         self.inner.write_iso_data(packet).await
     }
 
-    async fn read<'a>(
-        &self,
-        buf: &'a mut [u8],
-    ) -> Result<ControllerToHostPacket<'a>, Self::Error> {
+    async fn read<'a>(&self, buf: &'a mut [u8]) -> Result<ControllerToHostPacket<'a>, Self::Error> {
         self.inner.read(buf).await
     }
 }

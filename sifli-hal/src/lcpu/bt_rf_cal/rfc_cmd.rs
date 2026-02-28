@@ -400,8 +400,8 @@ fn build_txoff() -> CmdBuilder {
     c.push(cmd::rd(reg::FBDV_REG1));
     c.push(cmd::and(fbdv_reg1::BRF_FBDV_EN_LV));
     c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1)); // bit 5
-    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV));     // bit 4
-    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV));       // bit 3
+    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV)); // bit 4
+    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV)); // bit 3
     c.push(cmd::wr(reg::FBDV_REG1));
 
     // ACAL_VH_SEL=3/ACAL_VL_SEL=1 (clear bit2, clear bit6)
@@ -467,16 +467,16 @@ fn build_bt_txon() -> CmdBuilder {
     // PFDCP_EN, ICP_SET (set bit 11, clear bit 13)
     c.push(cmd::rd(reg::PFDCP_REG));
     c.push(cmd::or(pfdcp_reg::BRF_PFDCP_EN_LV));
-    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV));      // bit 11
-    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2));  // bit 13
+    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV)); // bit 11
+    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2)); // bit 13
     c.push(cmd::wr(reg::PFDCP_REG));
 
     // FBDV_EN/MOD_STG/SDM_CLK_SEL (3G mode: MOD_STG=1, SDM_CLK_SEL=0)
     c.push(cmd::rd(reg::FBDV_REG1));
     c.push(cmd::or(fbdv_reg1::BRF_FBDV_EN_LV));
-    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1));  // bit 5
-    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV));       // bit 4
-    c.push(cmd::and(fbdv_reg1::BRF_SDM_CLK_SEL_LV));        // bit 3
+    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1)); // bit 5
+    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV)); // bit 4
+    c.push(cmd::and(fbdv_reg1::BRF_SDM_CLK_SEL_LV)); // bit 3
     c.push(cmd::wr(reg::FBDV_REG1));
 
     // FBDV_RSTB (clear)
@@ -486,8 +486,8 @@ fn build_bt_txon() -> CmdBuilder {
 
     // ACAL_VH_SEL=7/ACAL_VL_SEL=5 (set bit 2, set bit 6)
     c.push(cmd::rd(reg::VCO_REG2));
-    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VL_SEL_LV + 2));  // bit 2
-    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VH_SEL_LV + 2));  // bit 6
+    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VL_SEL_LV + 2)); // bit 2
+    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VH_SEL_LV + 2)); // bit 6
     c.push(cmd::wr(reg::VCO_REG2));
 
     // EDR_VCO_FLT_EN
@@ -678,16 +678,16 @@ fn build_bt_txoff() -> CmdBuilder {
     // EDR PFDCP_EN (clear), ICP_SET (clear bit 11, set bit 13)
     c.push(cmd::rd(reg::PFDCP_REG));
     c.push(cmd::and(pfdcp_reg::BRF_PFDCP_EN_LV));
-    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV));      // bit 11
-    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2));   // bit 13
+    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV)); // bit 11
+    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2)); // bit 13
     c.push(cmd::wr(reg::PFDCP_REG));
 
     // EDR FBDV_EN(clear)/MOD_STG(restore 5G: MOD_STG=2, SDM_CLK_SEL=1)
     c.push(cmd::rd(reg::FBDV_REG1));
     c.push(cmd::and(fbdv_reg1::BRF_FBDV_EN_LV));
-    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1));  // bit 5
-    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV));      // bit 4
-    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV));        // bit 3
+    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1)); // bit 5
+    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV)); // bit 4
+    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV)); // bit 3
     c.push(cmd::wr(reg::FBDV_REG1));
 
     // ACAL_VH_SEL=3/ACAL_VL_SEL=1 (clear bit 2, clear bit 6)

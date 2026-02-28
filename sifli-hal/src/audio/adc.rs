@@ -99,9 +99,7 @@ impl<'d> AudioAdc<'d, Blocking> {
     ///
     /// `buf` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn read_blocking(&mut self, buf: &mut [u32]) {
-        audprc()
-            .rx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().rx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let transfer = unsafe {
             self.rx_dma
@@ -164,9 +162,7 @@ impl<'d> AudioAdc<'d, Async> {
     ///
     /// `buf` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub async fn read(&mut self, buf: &mut [u32]) -> Result<(), Error> {
-        audprc()
-            .rx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().rx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let transfer = unsafe {
             self.rx_dma
@@ -195,13 +191,8 @@ impl<'d> AudioAdc<'d, Async> {
     ///
     /// `dma_buf` **must** be in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     /// Recommended size: `2 * (sample_rate / 10)` for ~100ms per half-buffer.
-    pub fn start_stream<'buf>(
-        &'buf mut self,
-        dma_buf: &'buf mut [u32],
-    ) -> AudioInputStream<'buf> {
-        audprc()
-            .rx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+    pub fn start_stream<'buf>(&'buf mut self, dma_buf: &'buf mut [u32]) -> AudioInputStream<'buf> {
+        audprc().rx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let mut ring = unsafe {
             ReadableRingBuffer::new(
@@ -250,9 +241,7 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
             w.set_stb_clk_sel(config.sample_rate.stb_clk_sel());
             w.set_auto_gate_en(true);
         });
-        audprc
-            .cfg()
-            .modify(|w| w.set_audclk_div_update(true));
+        audprc.cfg().modify(|w| w.set_audclk_div_update(true));
 
         // Strobe divider
         audprc.stb().modify(|w| {
