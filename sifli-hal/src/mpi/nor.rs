@@ -6,19 +6,188 @@ use super::driver::Mpi;
 use super::shared::*;
 use super::types::*;
 use super::{Instance, Regs};
+use crate::Peripheral;
+
+#[derive(Clone, Copy)]
+pub(super) enum NorExecBackend {
+    Direct,
+    XipSafe,
+}
+
+impl NorExecBackend {
+    const fn direct() -> Self {
+        Self::Direct
+    }
+
+    const fn xip_safe() -> Self {
+        Self::XipSafe
+    }
+
+    pub(super) const fn from_running_from_xip(running_from_xip: bool) -> Self {
+        if running_from_xip {
+            Self::xip_safe()
+        } else {
+            Self::direct()
+        }
+    }
+
+    #[inline(always)]
+    fn issue_simple_cmd(self, regs: Regs, cmd: u8, max_polls: u32) -> bool {
+        match self {
+            Self::Direct => ram_issue_simple_cmd(regs, cmd, max_polls),
+            Self::XipSafe => ram_wrapper_issue_simple_cmd(regs, cmd, max_polls),
+        }
+    }
+
+    #[inline(always)]
+    fn wait_ready(self, regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool {
+        match self {
+            Self::Direct => ram_wait_ready_sme1(regs, read_status_cmd, max_polls),
+            Self::XipSafe => ram_wrapper_wait_ready(regs, read_status_cmd, max_polls),
+        }
+    }
+
+    #[inline(always)]
+    fn read_status(self, regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()> {
+        match self {
+            Self::Direct => ram_read_status(regs, cmd, max_polls),
+            Self::XipSafe => ram_wrapper_read_status(regs, cmd, max_polls),
+        }
+    }
+
+    #[inline(always)]
+    fn read_jedec_id(self, regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()> {
+        match self {
+            Self::Direct => ram_read_jedec_id(regs, cmd, max_polls),
+            Self::XipSafe => ram_wrapper_read_jedec_id(regs, cmd, max_polls),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn program_chunk(
+        self,
+        regs: Regs,
+        wren_cmd: u8,
+        program_cmd: u8,
+        read_status_cmd: u8,
+        addr: u32,
+        addr_size: u8,
+        data: &[u8],
+        max_polls: u32,
+    ) -> bool {
+        match self {
+            Self::Direct => ram_program_chunk(
+                regs,
+                wren_cmd,
+                program_cmd,
+                read_status_cmd,
+                addr,
+                addr_size,
+                data,
+                max_polls,
+            ),
+            Self::XipSafe => ram_wrapper_program_chunk(
+                regs,
+                wren_cmd,
+                program_cmd,
+                read_status_cmd,
+                addr,
+                addr_size,
+                data,
+                max_polls,
+            ),
+        }
+    }
+
+    #[inline(always)]
+    fn erase_sector(
+        self,
+        regs: Regs,
+        wren_cmd: u8,
+        erase_cmd: u8,
+        read_status_cmd: u8,
+        addr: u32,
+        addr_size: u8,
+        max_polls: u32,
+    ) -> bool {
+        match self {
+            Self::Direct => ram_erase_sector(
+                regs,
+                wren_cmd,
+                erase_cmd,
+                read_status_cmd,
+                addr,
+                addr_size,
+                max_polls,
+            ),
+            Self::XipSafe => ram_wrapper_erase_sector(
+                regs,
+                wren_cmd,
+                erase_cmd,
+                read_status_cmd,
+                addr,
+                addr_size,
+                max_polls,
+            ),
+        }
+    }
+
+    #[inline(always)]
+    fn erase_chip(
+        self,
+        regs: Regs,
+        wren_cmd: u8,
+        chip_erase_cmd: u8,
+        read_status_cmd: u8,
+        max_polls: u32,
+    ) -> bool {
+        match self {
+            Self::Direct => {
+                ram_erase_chip(regs, wren_cmd, chip_erase_cmd, read_status_cmd, max_polls)
+            }
+            Self::XipSafe => {
+                ram_wrapper_erase_chip(regs, wren_cmd, chip_erase_cmd, read_status_cmd, max_polls)
+            }
+        }
+    }
+}
 
 pub struct MpiNorFlash<'d, T: Instance, const WRITE_GRAN: usize = 1, const ERASE_GRAN: usize = 4096>
 {
     pub(super) mpi: Mpi<'d, T>,
     pub(super) config: NorFlashConfig,
+    pub(super) exec: NorExecBackend,
 }
 
 impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
     MpiNorFlash<'d, T, WRITE_GRAN, ERASE_GRAN>
 {
-    #[inline(always)]
-    fn running_from_xip(&self) -> bool {
-        running_from_instance_code_bus_flash::<T>()
+    /// Create a blocking NOR flash instance with common defaults.
+    pub fn new_blocking(
+        inner: impl Peripheral<P = T> + 'd,
+        capacity: usize,
+    ) -> Result<Self, Error> {
+        Mpi::try_new(inner)?.into_nor_flash_default::<WRITE_GRAN, ERASE_GRAN>(capacity)
+    }
+
+    /// Create a blocking NOR flash instance with explicit MPI and NOR configs.
+    pub fn new_blocking_with_config(
+        inner: impl Peripheral<P = T> + 'd,
+        mpi_config: MpiInitConfig,
+        flash_config: NorFlashConfig,
+    ) -> Result<Self, Error> {
+        Mpi::with_config(inner, mpi_config)?.into_nor_flash(flash_config)
+    }
+
+    /// Create a blocking NOR flash instance without resetting MPI.
+    ///
+    /// Useful when code may execute from this instance's XIP window.
+    pub fn new_blocking_without_reset(
+        inner: impl Peripheral<P = T> + 'd,
+        flash_config: NorFlashConfig,
+    ) -> Result<Self, Error> {
+        Mpi::new_without_reset(inner).into_nor_flash(flash_config)
     }
 
     pub const fn config(&self) -> NorFlashConfig {
@@ -57,11 +226,8 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         T::regs()
     }
 
-    fn addr_size_bits(&self) -> u8 {
-        self.config.address_size.bits()
-    }
-
-    fn command_with_addr_mode(&self, cmd_3byte: u8, cmd_4byte: Option<u8>) -> u8 {
+    #[inline(always)]
+    fn selected_cmd(&self, cmd_3byte: u8, cmd_4byte: Option<u8>) -> u8 {
         if self.config.address_size == AddressSize::FourBytes {
             cmd_4byte.unwrap_or(cmd_3byte)
         } else {
@@ -69,15 +235,79 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         }
     }
 
-    fn optional_command_with_addr_mode(
-        &self,
-        cmd_3byte: Option<u8>,
-        cmd_4byte: Option<u8>,
-    ) -> Option<u8> {
+    #[inline(always)]
+    fn selected_optional_cmd(&self, cmd_3byte: Option<u8>, cmd_4byte: Option<u8>) -> Option<u8> {
         if self.config.address_size == AddressSize::FourBytes {
             cmd_4byte.or(cmd_3byte)
         } else {
             cmd_3byte
+        }
+    }
+
+    #[inline(always)]
+    fn addr_size_bits(&self) -> u8 {
+        self.config.address_size.bits()
+    }
+
+    #[inline(always)]
+    fn write_enable_cmd(&self) -> u8 {
+        self.config.commands.write_enable
+    }
+
+    #[inline(always)]
+    fn read_status_cmd(&self) -> u8 {
+        self.config.commands.read_status
+    }
+
+    #[inline(always)]
+    fn read_jedec_id_cmd(&self) -> u8 {
+        self.config.commands.read_jedec_id
+    }
+
+    #[inline(always)]
+    fn page_program_cmd(&self) -> u8 {
+        self.selected_cmd(
+            self.config.commands.page_program,
+            self.config.commands.page_program_4byte,
+        )
+    }
+
+    #[inline(always)]
+    fn sector_erase_cmd(&self) -> u8 {
+        self.selected_cmd(
+            self.config.commands.sector_erase,
+            self.config.commands.sector_erase_4byte,
+        )
+    }
+
+    #[inline(always)]
+    fn block_erase_32k_cmd(&self) -> Option<u8> {
+        self.selected_optional_cmd(
+            self.config.commands.block_erase_32k,
+            self.config.commands.block_erase_32k_4byte,
+        )
+    }
+
+    #[inline(always)]
+    fn block_erase_64k_cmd(&self) -> Option<u8> {
+        self.selected_optional_cmd(
+            self.config.commands.block_erase_64k,
+            self.config.commands.block_erase_64k_4byte,
+        )
+    }
+
+    #[inline(always)]
+    fn chip_erase_cmd(&self) -> Option<u8> {
+        self.config.commands.chip_erase
+    }
+
+    #[inline(always)]
+    fn base_erase_opcode(&self) -> Option<u8> {
+        match ERASE_GRAN {
+            4096 => Some(self.sector_erase_cmd()),
+            32768 => self.block_erase_32k_cmd(),
+            65536 => self.block_erase_64k_cmd(),
+            _ => None,
         }
     }
 
@@ -90,127 +320,34 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         }
     }
 
-    #[inline(always)]
-    fn run_bool_cmd(
-        &self,
-        cmd: u8,
-        xip: fn(Regs, u8, u32) -> bool,
-        normal: fn(Regs, u8, u32) -> bool,
-    ) -> bool {
-        let regs = self.regs();
-        let max_polls = self.config.max_ready_polls;
-        if self.running_from_xip() {
-            xip(regs, cmd, max_polls)
-        } else {
-            normal(regs, cmd, max_polls)
-        }
-    }
-
-    #[inline(always)]
-    fn run_result_cmd<R>(
-        &self,
-        cmd: u8,
-        xip: fn(Regs, u8, u32) -> Result<R, ()>,
-        normal: fn(Regs, u8, u32) -> Result<R, ()>,
-    ) -> Result<R, Error> {
-        let regs = self.regs();
-        let max_polls = self.config.max_ready_polls;
-        let result = if self.running_from_xip() {
-            xip(regs, cmd, max_polls)
-        } else {
-            normal(regs, cmd, max_polls)
-        };
-        result.map_err(|_| Error::Timeout)
-    }
-
-    fn page_program_cmd(&self) -> u8 {
-        self.command_with_addr_mode(
-            self.config.commands.page_program,
-            self.config.commands.page_program_4byte,
-        )
-    }
-
-    fn sector_erase_cmd(&self) -> u8 {
-        self.command_with_addr_mode(
-            self.config.commands.sector_erase,
-            self.config.commands.sector_erase_4byte,
-        )
-    }
-
-    fn block_erase_32k_cmd(&self) -> Option<u8> {
-        self.optional_command_with_addr_mode(
-            self.config.commands.block_erase_32k,
-            self.config.commands.block_erase_32k_4byte,
-        )
-    }
-
-    fn block_erase_64k_cmd(&self) -> Option<u8> {
-        self.optional_command_with_addr_mode(
-            self.config.commands.block_erase_64k,
-            self.config.commands.block_erase_64k_4byte,
-        )
-    }
-
-    fn base_erase_opcode(&self) -> Option<u8> {
-        match ERASE_GRAN {
-            4096 => Some(self.sector_erase_cmd()),
-            32768 => self.block_erase_32k_cmd(),
-            65536 => self.block_erase_64k_cmd(),
-            _ => None,
-        }
-    }
-
     fn issue_simple_command(&mut self, cmd: u8) -> Result<(), Error> {
-        Self::timeout_if_false(self.run_bool_cmd(
-            cmd,
-            ram_wrapper_issue_simple_cmd,
-            ram_issue_simple_cmd,
-        ))
+        let ok = self
+            .exec
+            .issue_simple_cmd(self.regs(), cmd, self.config.max_ready_polls);
+        Self::timeout_if_false(ok)
     }
 
     fn erase_with_opcode(&mut self, addr: u32, erase_cmd: u8) -> Result<(), Error> {
-        let ok = if self.running_from_xip() {
-            ram_wrapper_erase_sector(
-                self.regs(),
-                self.config.commands.write_enable,
-                erase_cmd,
-                self.config.commands.read_status,
-                addr,
-                self.addr_size_bits(),
-                self.config.max_ready_polls,
-            )
-        } else {
-            ram_erase_sector(
-                self.regs(),
-                self.config.commands.write_enable,
-                erase_cmd,
-                self.config.commands.read_status,
-                addr,
-                self.addr_size_bits(),
-                self.config.max_ready_polls,
-            )
-        };
+        let ok = self.exec.erase_sector(
+            self.regs(),
+            self.write_enable_cmd(),
+            erase_cmd,
+            self.read_status_cmd(),
+            addr,
+            self.addr_size_bits(),
+            self.config.max_ready_polls,
+        );
         Self::timeout_if_false(ok)
     }
 
     fn erase_chip_internal(&mut self, erase_cmd: u8) -> Result<(), Error> {
-        let ok = if self.running_from_xip() {
-            ram_wrapper_erase_chip(
-                self.regs(),
-                self.config.commands.write_enable,
-                erase_cmd,
-                self.config.commands.read_status,
-                self.config.max_ready_polls,
-            )
-        } else {
-            ram_erase_chip(
-                self.regs(),
-                self.config.commands.write_enable,
-                erase_cmd,
-                self.config.commands.read_status,
-                self.config.max_ready_polls,
-            )
-        };
+        let ok = self.exec.erase_chip(
+            self.regs(),
+            self.write_enable_cmd(),
+            erase_cmd,
+            self.read_status_cmd(),
+            self.config.max_ready_polls,
+        );
         Self::timeout_if_false(ok)
     }
 
@@ -270,53 +407,45 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
     }
 
     pub fn read_status(&mut self) -> Result<u8, Error> {
-        self.run_result_cmd(
-            self.config.commands.read_status,
-            ram_wrapper_read_status,
-            ram_read_status,
-        )
+        self.exec
+            .read_status(
+                self.regs(),
+                self.read_status_cmd(),
+                self.config.max_ready_polls,
+            )
+            .map_err(|_| Error::Timeout)
     }
 
     pub fn wait_ready(&mut self) -> Result<(), Error> {
-        Self::timeout_if_false(self.run_bool_cmd(
-            self.config.commands.read_status,
-            ram_wrapper_wait_ready,
-            ram_wait_ready_sme1,
-        ))
+        let ok = self.exec.wait_ready(
+            self.regs(),
+            self.read_status_cmd(),
+            self.config.max_ready_polls,
+        );
+        Self::timeout_if_false(ok)
     }
 
     pub fn read_jedec_id(&mut self) -> Result<u32, Error> {
-        self.run_result_cmd(
-            self.config.commands.read_jedec_id,
-            ram_wrapper_read_jedec_id,
-            ram_read_jedec_id,
-        )
+        self.exec
+            .read_jedec_id(
+                self.regs(),
+                self.read_jedec_id_cmd(),
+                self.config.max_ready_polls,
+            )
+            .map_err(|_| Error::Timeout)
     }
 
     fn program_chunk(&mut self, addr: u32, data: &[u8]) -> Result<(), Error> {
-        let ok = if self.running_from_xip() {
-            ram_wrapper_program_chunk(
-                self.regs(),
-                self.config.commands.write_enable,
-                self.page_program_cmd(),
-                self.config.commands.read_status,
-                addr,
-                self.addr_size_bits(),
-                data,
-                self.config.max_ready_polls,
-            )
-        } else {
-            ram_program_chunk(
-                self.regs(),
-                self.config.commands.write_enable,
-                self.page_program_cmd(),
-                self.config.commands.read_status,
-                addr,
-                self.addr_size_bits(),
-                data,
-                self.config.max_ready_polls,
-            )
-        };
+        let ok = self.exec.program_chunk(
+            self.regs(),
+            self.write_enable_cmd(),
+            self.page_program_cmd(),
+            self.read_status_cmd(),
+            addr,
+            self.addr_size_bits(),
+            data,
+            self.config.max_ready_polls,
+        );
         Self::timeout_if_false(ok)
     }
 
@@ -426,7 +555,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
 
         // Full-chip erase path when possible.
         if from == 0 && (to as usize) == self.config.capacity {
-            if let Some(chip_erase_cmd) = self.config.commands.chip_erase {
+            if let Some(chip_erase_cmd) = self.chip_erase_cmd() {
                 self.erase_chip_internal(chip_erase_cmd)?;
                 self.invalidate_cache_for_range(from, (to - from) as usize);
                 return Ok(());
@@ -509,9 +638,9 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         self,
         partition: NorFlashPartition,
     ) -> Result<MpiNorPartition<'d, T, WRITE_GRAN, ERASE_GRAN>, Error> {
-        if partition.offset as usize % WRITE_GRAN != 0
-            || partition.offset as usize % ERASE_GRAN != 0
-            || partition.size as usize % ERASE_GRAN != 0
+        if !(partition.offset as usize).is_multiple_of(WRITE_GRAN)
+            || !(partition.offset as usize).is_multiple_of(ERASE_GRAN)
+            || !(partition.size as usize).is_multiple_of(ERASE_GRAN)
         {
             return Err(Error::NotAligned);
         }
@@ -527,6 +656,15 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
             flash: self,
             partition,
         })
+    }
+
+    /// Convenience helper for creating a partition from `offset` + `size`.
+    pub fn into_partition_offset_size(
+        self,
+        offset: u32,
+        size: u32,
+    ) -> Result<MpiNorPartition<'d, T, WRITE_GRAN, ERASE_GRAN>, Error> {
+        self.into_partition(NorFlashPartition::new(offset, size))
     }
 
     pub fn free(self) -> Mpi<'d, T> {

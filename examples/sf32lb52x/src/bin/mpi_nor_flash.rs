@@ -7,7 +7,7 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use panic_probe as _;
 
-use sifli_hal::mpi::{Mpi, NorFlashConfig};
+use sifli_hal::mpi::{Flash, NorFlashConfig};
 
 const FLASH_CODE_BUS_BASE: usize = 0x1200_0000;
 const FLASH_CODE_BUS_END: usize = 0x1300_0000;
@@ -38,9 +38,13 @@ async fn main(_spawner: Spawner) {
         if running_from_mpi2_xip() { "yes" } else { "no" }
     );
 
-    // Use new_without_reset() to take ownership of the MPI controller without
-    // resetting it, since we're executing code from the same flash.
-    let mpi = Mpi::new_without_reset(p.MPI2);
+    // Build a flash driver directly, without resetting MPI, since we execute
+    // from the same flash XIP window.
+    let mut flash = Flash::<_, 1, 4096>::new_blocking_without_reset(
+        p.MPI2,
+        NorFlashConfig::new(FLASH_CAPACITY_BYTES),
+    )
+    .unwrap();
 
     // Debug: Print actual MPI2 base address from PAC
     let mpi2_addr = sifli_hal::pac::MPI2.as_ptr() as usize;
@@ -53,16 +57,12 @@ async fn main(_spawner: Spawner) {
     info!("MPI2 CCR1: 0x{=u32:08X}", mpi2.ccr1().read().0);
     info!("MPI2 HCCR: 0x{=u32:08X}", mpi2.hrccr().read().0);
 
-    let cfg = NorFlashConfig::new(FLASH_CAPACITY_BYTES);
-    let mut flash = mpi.into_nor_flash::<1, 4096>(cfg).unwrap();
-
     // Read JEDEC ID - uses hardware CMD2 status polling
     info!("Reading JEDEC ID...");
     let jedec_id = flash.read_jedec_id().unwrap();
     info!(
         "JEDEC ID: 0x{=u32:06X} (manufacturer: 0x{=u8:02X})",
-        jedec_id,
-        jedec_id as u8
+        jedec_id, jedec_id as u8
     );
 
     info!("Checkpoint F: before read_bytes(TEST_OFFSET, 16)");

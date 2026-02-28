@@ -199,6 +199,17 @@ mod types {
         }
     }
 
+    impl MpiInitConfig {
+        /// XIP-friendly init: skip reset and keep existing MPI timing/config.
+        pub const fn xip_without_reset() -> Self {
+            Self {
+                reset: false,
+                apply_default_config: false,
+                allow_reset_from_xip: true,
+            }
+        }
+    }
+
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct NorFlashCommandSet {
         pub write_enable: u8,
@@ -342,9 +353,9 @@ mod instance_impl {
     );
 }
 
-
 pub use driver::Mpi;
 pub use nor::{MpiNorFlash, MpiNorPartition};
+pub use nor::{MpiNorFlash as Flash, MpiNorPartition as FlashPartition};
 pub use types::{
     AddressSize, AhbCommandConfig, CommandConfig, CommandSlot, Error, FifoClear, FunctionMode,
     MpiInitConfig, NorFlashCommandSet, NorFlashConfig, NorFlashPartition, PhaseMode,

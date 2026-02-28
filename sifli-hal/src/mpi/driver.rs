@@ -2,7 +2,7 @@ use core::hint::spin_loop;
 
 use embassy_hal_internal::{into_ref, PeripheralRef};
 
-use super::nor::MpiNorFlash;
+use super::nor::{MpiNorFlash, NorExecBackend};
 use super::shared::*;
 use super::types::*;
 use super::{Instance, Regs};
@@ -40,26 +40,9 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Self::with_config(inner, MpiInitConfig::default())
     }
 
-    #[deprecated(note = "Use Mpi::try_new (safe) or Mpi::new_without_reset for XIP scenarios.")]
-    pub fn new(inner: impl Peripheral<P = T> + 'd) -> Self {
-        Self::try_new(inner).unwrap_or_else(|_| {
-            panic!(
-                "unsafe MPI reset while executing from same-instance XIP; use new_without_reset()"
-            )
-        })
-    }
-
     pub fn new_without_reset(inner: impl Peripheral<P = T> + 'd) -> Self {
-        // Keep legacy behavior: no reset and no automatic timing reconfiguration.
-        Self::with_config(
-            inner,
-            MpiInitConfig {
-                reset: false,
-                apply_default_config: false,
-                allow_reset_from_xip: true,
-            },
-        )
-        .unwrap_or_else(|_| unreachable!())
+        Self::with_config(inner, MpiInitConfig::xip_without_reset())
+            .unwrap_or_else(|_| unreachable!())
     }
 
     pub fn apply_default_config(&mut self) {
@@ -293,8 +276,14 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Ok(())
     }
 
-    pub fn set_command_no_wait(&mut self, slot: CommandSlot, cmd: u8, addr: u32) {
-        let _ = self.try_set_command_no_wait(slot, cmd, addr);
+    /// Convert to NOR flash with common defaults.
+    ///
+    /// This is the simplest entry point for standard SPI NOR parts.
+    pub fn into_nor_flash_default<const WRITE_GRAN: usize, const ERASE_GRAN: usize>(
+        self,
+        capacity: usize,
+    ) -> Result<MpiNorFlash<'d, T, WRITE_GRAN, ERASE_GRAN>, Error> {
+        self.into_nor_flash(NorFlashConfig::new(capacity))
     }
 
     fn validate_nor_flash_config<const WRITE_GRAN: usize, const ERASE_GRAN: usize>(
@@ -337,6 +326,15 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Self::validate_nor_flash_config::<WRITE_GRAN, ERASE_GRAN>(&config, window_size)?;
 
         let mut this = self;
+        let address_size = config.address_size;
+        let ahb_read_cmd = if address_size == AddressSize::FourBytes {
+            config
+                .commands
+                .ahb_read_4byte
+                .unwrap_or(config.commands.ahb_read)
+        } else {
+            config.commands.ahb_read
+        };
         let running_from_xip = running_from_instance_code_bus_flash::<T>();
         let needs_4byte_address = config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES;
 
@@ -358,20 +356,17 @@ impl<'d, T: Instance> Mpi<'d, T> {
             }
         }
 
-        let ahb_read_cmd = match config.address_size {
-            AddressSize::FourBytes => config
-                .commands
-                .ahb_read_4byte
-                .unwrap_or(config.commands.ahb_read),
-            _ => config.commands.ahb_read,
-        };
         if !running_from_xip {
             this.configure_ahb_read_command(
                 ahb_read_cmd,
-                AhbCommandConfig::single_io(config.address_size),
+                AhbCommandConfig::single_io(address_size),
             )?;
         }
 
-        Ok(MpiNorFlash { mpi: this, config })
+        Ok(MpiNorFlash {
+            mpi: this,
+            config,
+            exec: NorExecBackend::from_running_from_xip(running_from_xip),
+        })
     }
 }
