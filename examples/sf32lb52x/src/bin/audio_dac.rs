@@ -13,7 +13,7 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use embedded_io::Write as _;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{AudioDac, DacConfig};
 use sifli_hal::usart::{Config as UartConfig, Uart};
 

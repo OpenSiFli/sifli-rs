@@ -13,10 +13,10 @@ use panic_probe as _;
 use embassy_executor::Spawner;
 use embedded_io::Write as _;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{self, AudioDac, DacConfig};
-use sifli_hal::usart::{Config as UartConfig, Uart};
 use sifli_hal::bind_interrupts;
+use sifli_hal::usart::{Config as UartConfig, Uart};
 
 use libm::sinf;
 
@@ -41,25 +41,71 @@ const EN: f32 = 0.5;
 // "Ode to Joy" — AABA form (64 beats)
 const MELODY: [(f32, f32); 62] = [
     // A1
-    (E4, Q), (E4, Q), (F4, Q), (G4, Q),
-    (G4, Q), (F4, Q), (E4, Q), (D4, Q),
-    (C4, Q), (C4, Q), (D4, Q), (E4, Q),
-    (E4, DQ), (D4, EN), (D4, H),
+    (E4, Q),
+    (E4, Q),
+    (F4, Q),
+    (G4, Q),
+    (G4, Q),
+    (F4, Q),
+    (E4, Q),
+    (D4, Q),
+    (C4, Q),
+    (C4, Q),
+    (D4, Q),
+    (E4, Q),
+    (E4, DQ),
+    (D4, EN),
+    (D4, H),
     // A2
-    (E4, Q), (E4, Q), (F4, Q), (G4, Q),
-    (G4, Q), (F4, Q), (E4, Q), (D4, Q),
-    (C4, Q), (C4, Q), (D4, Q), (E4, Q),
-    (D4, DQ), (C4, EN), (C4, H),
+    (E4, Q),
+    (E4, Q),
+    (F4, Q),
+    (G4, Q),
+    (G4, Q),
+    (F4, Q),
+    (E4, Q),
+    (D4, Q),
+    (C4, Q),
+    (C4, Q),
+    (D4, Q),
+    (E4, Q),
+    (D4, DQ),
+    (C4, EN),
+    (C4, H),
     // B (bridge)
-    (D4, Q), (D4, Q), (E4, Q), (C4, Q),
-    (D4, Q), (E4, EN), (F4, EN), (E4, Q), (C4, Q),
-    (D4, Q), (E4, EN), (F4, EN), (E4, Q), (D4, Q),
-    (C4, Q), (D4, Q), (G3, H),
+    (D4, Q),
+    (D4, Q),
+    (E4, Q),
+    (C4, Q),
+    (D4, Q),
+    (E4, EN),
+    (F4, EN),
+    (E4, Q),
+    (C4, Q),
+    (D4, Q),
+    (E4, EN),
+    (F4, EN),
+    (E4, Q),
+    (D4, Q),
+    (C4, Q),
+    (D4, Q),
+    (G3, H),
     // A2 (return)
-    (E4, Q), (E4, Q), (F4, Q), (G4, Q),
-    (G4, Q), (F4, Q), (E4, Q), (D4, Q),
-    (C4, Q), (C4, Q), (D4, Q), (E4, Q),
-    (D4, DQ), (C4, EN), (C4, H),
+    (E4, Q),
+    (E4, Q),
+    (F4, Q),
+    (G4, Q),
+    (G4, Q),
+    (F4, Q),
+    (E4, Q),
+    (D4, Q),
+    (C4, Q),
+    (C4, Q),
+    (D4, Q),
+    (E4, Q),
+    (D4, DQ),
+    (C4, EN),
+    (C4, H),
 ];
 
 const TOTAL_BEATS: usize = 64;
@@ -103,7 +149,9 @@ fn fill_note(buf: &mut [u32], pos: usize, freq: f32, dur: usize) {
     let gap = 240usize.min(dur / 8);
 
     for i in 0..dur {
-        if pos + i >= buf.len() { break; }
+        if pos + i >= buf.len() {
+            break;
+        }
 
         let w1 = wave_at(phase);
         let w2 = wave_at(phase.wrapping_mul(2));

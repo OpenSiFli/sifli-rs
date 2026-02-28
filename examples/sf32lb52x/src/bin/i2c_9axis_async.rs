@@ -93,7 +93,11 @@ async fn main(_spawner: Spawner) {
                 );
             }
             Err(e) => {
-                let _ = writeln!(usart, "transaction() MMC5603 error: {:?}", defmt::Debug2Format(&e));
+                let _ = writeln!(
+                    usart,
+                    "transaction() MMC5603 error: {:?}",
+                    defmt::Debug2Format(&e)
+                );
             }
         }
     }
@@ -111,7 +115,11 @@ async fn main(_spawner: Spawner) {
                 );
             }
             Err(e) => {
-                let _ = writeln!(usart, "write_read()  MMC5603 error: {:?}", defmt::Debug2Format(&e));
+                let _ = writeln!(
+                    usart,
+                    "write_read()  MMC5603 error: {:?}",
+                    defmt::Debug2Format(&e)
+                );
             }
         }
     }
@@ -139,7 +147,11 @@ async fn main(_spawner: Spawner) {
                 );
             }
             Err(e) => {
-                let _ = writeln!(usart, "transaction() LSM6DS3 error: {:?}", defmt::Debug2Format(&e));
+                let _ = writeln!(
+                    usart,
+                    "transaction() LSM6DS3 error: {:?}",
+                    defmt::Debug2Format(&e)
+                );
             }
         }
     }
@@ -172,7 +184,10 @@ async fn main(_spawner: Spawner) {
         if has_imu {
             // Read status + accel + gyro data
             let mut status = [0u8; 1];
-            if i2c.write_read(LSM6_ADDR, &[LSM6_STATUS], &mut status).await.is_ok()
+            if i2c
+                .write_read(LSM6_ADDR, &[LSM6_STATUS], &mut status)
+                .await
+                .is_ok()
                 && (status[0] & 0x03) != 0
             {
                 let mut gyro_buf = [0u8; 6];
@@ -206,11 +221,18 @@ async fn main(_spawner: Spawner) {
         if i2c.write(MMC_ADDR, &[MMC_CTRL0, 0x01]).await.is_ok() {
             Timer::after_millis(10).await;
             let mut status = [0u8; 1];
-            if i2c.write_read(MMC_ADDR, &[MMC_STATUS], &mut status).await.is_ok()
+            if i2c
+                .write_read(MMC_ADDR, &[MMC_STATUS], &mut status)
+                .await
+                .is_ok()
                 && (status[0] & 0x40) != 0
             {
                 let mut buf = [0u8; 6];
-                if i2c.write_read(MMC_ADDR, &[MMC_XOUT0], &mut buf).await.is_ok() {
+                if i2c
+                    .write_read(MMC_ADDR, &[MMC_XOUT0], &mut buf)
+                    .await
+                    .is_ok()
+                {
                     let mx = ((buf[0] as u16) << 8 | buf[1] as u16) as i32 - 32768;
                     let my = ((buf[2] as u16) << 8 | buf[3] as u16) as i32 - 32768;
                     let mz = ((buf[4] as u16) << 8 | buf[5] as u16) as i32 - 32768;
@@ -228,7 +250,8 @@ async fn init_sensor_async(
     usart: &mut impl Write,
 ) -> Result<bool, i2c::Error> {
     let mut buf = [0u8; 1];
-    i2c.write_read(LSM6_ADDR, &[LSM6_WHO_AM_I], &mut buf).await?;
+    i2c.write_read(LSM6_ADDR, &[LSM6_WHO_AM_I], &mut buf)
+        .await?;
     let _ = writeln!(usart, "LSM6DS3TR-C WHO_AM_I: 0x{:02X}", buf[0]);
     if buf[0] != 0x6A {
         let _ = writeln!(usart, "  WARNING: expected 0x6A");

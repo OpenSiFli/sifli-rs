@@ -60,7 +60,6 @@ const BUCK_COT_CTUNE_CAL: u8 = 7;
 /// BUCK COT_CTUNE default value (restored after calibration).
 const BUCK_COT_CTUNE_DEFAULT: u8 = 4;
 
-
 /// Cosine table for mixer demodulation (16-point period, Q10 format)
 const COS_TABLE: [i16; 16] = [
     1024, 946, 724, 392, 0, -392, -724, -946, -1024, -946, -724, -392, 0, 392, 724, 946,

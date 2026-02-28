@@ -75,7 +75,11 @@ async fn main(_spawner: Spawner) {
     // MMC5603NJ magnetometer (0x30, WHO_AM_I register 0x39, expect 0x10)
     match i2c.write_read(0x30, &[0x39], &mut buf).await {
         Ok(_) => {
-            let _ = writeln!(usart, "MMC5603 (0x30) WHO_AM_I: 0x{:02X} (expect 0x10)", buf[0]);
+            let _ = writeln!(
+                usart,
+                "MMC5603 (0x30) WHO_AM_I: 0x{:02X} (expect 0x10)",
+                buf[0]
+            );
         }
         Err(e) => {
             let _ = writeln!(usart, "MMC5603 (0x30) error: {:?}", defmt::Debug2Format(&e));

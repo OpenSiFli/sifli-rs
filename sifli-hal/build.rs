@@ -719,7 +719,12 @@ fn generate_signal_peripheral_nomux_impls(
 
         // Get signal suffix (LCDC1_SPI_RSTB -> RSTB) (laststr)
         // and convert to PascalCase (RSTB -> Rstb)
-        let raw_signal_suffix = func.function.split('_').next_back().unwrap_or("").to_lowercase();
+        let raw_signal_suffix = func
+            .function
+            .split('_')
+            .next_back()
+            .unwrap_or("")
+            .to_lowercase();
         let laststr_pascal = if !raw_signal_suffix.is_empty() {
             let mut chars = raw_signal_suffix.chars();
             match chars.next() {

@@ -15,7 +15,7 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use embedded_io::Write as _;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{self, AudioAdc};
 use sifli_hal::bind_interrupts;
 use sifli_hal::usart::{Config as UartConfig, Uart};
@@ -72,10 +72,18 @@ async fn main(_spawner: Spawner) {
                 for &w in samples.iter() {
                     let l = w as i16;
                     let r = (w >> 16) as i16;
-                    if l < min_l { min_l = l; }
-                    if l > max_l { max_l = l; }
-                    if r < min_r { min_r = r; }
-                    if r > max_r { max_r = r; }
+                    if l < min_l {
+                        min_l = l;
+                    }
+                    if l > max_l {
+                        max_l = l;
+                    }
+                    if r < min_r {
+                        min_r = r;
+                    }
+                    if r > max_r {
+                        max_r = r;
+                    }
                 }
 
                 let pp_l = max_l as i32 - min_l as i32;
@@ -103,7 +111,10 @@ async fn main(_spawner: Spawner) {
                         let _ = writeln!(
                             usart,
                             "    [{:2}] 0x{:08x}  L={:6} R={:6}",
-                            i, w, w as i16, (w >> 16) as i16
+                            i,
+                            w,
+                            w as i16,
+                            (w >> 16) as i16
                         );
                     }
                 }

@@ -39,14 +39,23 @@ const MMC_CTRL0: u8 = 0x1B;
 const MMC_CTRL2: u8 = 0x1D;
 
 /// Read a single register
-fn read_reg(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, addr: u8, reg: u8) -> Result<u8, i2c::Error> {
+fn read_reg(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    addr: u8,
+    reg: u8,
+) -> Result<u8, i2c::Error> {
     let mut buf = [0u8; 1];
     i2c.blocking_write_read(addr, &[reg], &mut buf)?;
     Ok(buf[0])
 }
 
 /// Write a single register
-fn write_reg(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, addr: u8, reg: u8, val: u8) -> Result<(), i2c::Error> {
+fn write_reg(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    addr: u8,
+    reg: u8,
+    val: u8,
+) -> Result<(), i2c::Error> {
     i2c.blocking_write(addr, &[reg, val])
 }
 
@@ -56,7 +65,10 @@ fn i16_from_le(buf: &[u8], offset: usize) -> i16 {
 }
 
 /// Initialize LSM6DS3TR-C: 104Hz ODR, ±4g accel, ±500dps gyro
-fn init_lsm6(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, usart: &mut impl Write) -> bool {
+fn init_lsm6(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    usart: &mut impl Write,
+) -> bool {
     let who = read_reg(i2c, LSM6_ADDR, LSM6_WHO_AM_I);
     match who {
         Ok(id) => {
@@ -66,7 +78,11 @@ fn init_lsm6(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, 
             }
         }
         Err(e) => {
-            let _ = writeln!(usart, "LSM6DS3TR-C not found: {:?}", defmt::Debug2Format(&e));
+            let _ = writeln!(
+                usart,
+                "LSM6DS3TR-C not found: {:?}",
+                defmt::Debug2Format(&e)
+            );
             return false;
         }
     }
@@ -87,7 +103,9 @@ fn init_lsm6(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, 
 }
 
 /// Read LSM6DS3TR-C accelerometer and gyroscope data
-fn read_lsm6(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>) -> Option<([i16; 3], [i16; 3])> {
+fn read_lsm6(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+) -> Option<([i16; 3], [i16; 3])> {
     // Check data ready
     let status = read_reg(i2c, LSM6_ADDR, LSM6_STATUS).ok()?;
     if status & 0x03 == 0 {
@@ -96,14 +114,16 @@ fn read_lsm6(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>) 
 
     // Read gyroscope (6 bytes from 0x22, auto-increment)
     let mut gyro_buf = [0u8; 6];
-    i2c.blocking_write_read(LSM6_ADDR, &[LSM6_OUT_GYRO], &mut gyro_buf).ok()?;
+    i2c.blocking_write_read(LSM6_ADDR, &[LSM6_OUT_GYRO], &mut gyro_buf)
+        .ok()?;
     let gx = i16_from_le(&gyro_buf, 0);
     let gy = i16_from_le(&gyro_buf, 2);
     let gz = i16_from_le(&gyro_buf, 4);
 
     // Read accelerometer (6 bytes from 0x28, auto-increment)
     let mut accel_buf = [0u8; 6];
-    i2c.blocking_write_read(LSM6_ADDR, &[LSM6_OUT_ACCEL], &mut accel_buf).ok()?;
+    i2c.blocking_write_read(LSM6_ADDR, &[LSM6_OUT_ACCEL], &mut accel_buf)
+        .ok()?;
     let ax = i16_from_le(&accel_buf, 0);
     let ay = i16_from_le(&accel_buf, 2);
     let az = i16_from_le(&accel_buf, 4);
@@ -112,7 +132,10 @@ fn read_lsm6(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>) 
 }
 
 /// Initialize MMC5603NJ
-fn init_mmc5603(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>, usart: &mut impl Write) -> bool {
+fn init_mmc5603(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+    usart: &mut impl Write,
+) -> bool {
     let who = read_reg(i2c, MMC_ADDR, MMC_PRODUCT_ID);
     match who {
         Ok(id) => {
@@ -136,7 +159,9 @@ fn init_mmc5603(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode
 
 /// Read MMC5603NJ magnetometer data using single-shot measurement.
 /// Triggers a measurement, waits, then reads result.
-fn read_mmc5603(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>) -> Option<[i32; 3]> {
+fn read_mmc5603(
+    i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode>,
+) -> Option<[i32; 3]> {
     // Trigger single measurement: CTRL0 TM_M bit (bit 0)
     write_reg(i2c, MMC_ADDR, MMC_CTRL0, 0x01).ok()?;
 
@@ -151,7 +176,8 @@ fn read_mmc5603(i2c: &mut I2c<'_, impl i2c::Instance, impl sifli_hal::mode::Mode
 
     // Read 6 bytes from 0x00 (XOUT0..ZOUT1), 16-bit mode
     let mut buf = [0u8; 6];
-    i2c.blocking_write_read(MMC_ADDR, &[MMC_XOUT0], &mut buf).ok()?;
+    i2c.blocking_write_read(MMC_ADDR, &[MMC_XOUT0], &mut buf)
+        .ok()?;
 
     // Data is unsigned 16-bit, offset binary (midpoint = 32768 = 0 Gauss)
     let mx = ((buf[0] as u16) << 8 | buf[1] as u16) as i32 - 32768;
@@ -195,7 +221,9 @@ async fn main(_spawner: Spawner) {
 
     if !has_imu && !has_mag {
         let _ = writeln!(usart, "\nNo sensors found!");
-        loop { Timer::after_secs(1).await; }
+        loop {
+            Timer::after_secs(1).await;
+        }
     }
 
     Timer::after_millis(100).await; // Wait for first measurements
@@ -207,10 +235,10 @@ async fn main(_spawner: Spawner) {
             if let Some((accel, gyro)) = read_lsm6(&mut i2c) {
                 // ±4g: sensitivity = 0.122 mg/LSB → mg = raw * 122 / 1000
                 // ±500dps: sensitivity = 17.50 mdps/LSB
-                let _ = writeln!(usart,
+                let _ = writeln!(
+                    usart,
                     "Accel: X={:6} Y={:6} Z={:6}  Gyro: X={:6} Y={:6} Z={:6}",
-                    accel[0], accel[1], accel[2],
-                    gyro[0], gyro[1], gyro[2],
+                    accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2],
                 );
             }
         }
@@ -218,10 +246,7 @@ async fn main(_spawner: Spawner) {
         if has_mag {
             if let Some(mag) = read_mmc5603(&mut i2c) {
                 // 16-bit mode: 1 LSB ≈ 0.0625 mGauss (range ±30 Gauss)
-                let _ = writeln!(usart,
-                    "Mag:   X={:6} Y={:6} Z={:6}",
-                    mag[0], mag[1], mag[2],
-                );
+                let _ = writeln!(usart, "Mag:   X={:6} Y={:6} Z={:6}", mag[0], mag[1], mag[2],);
             }
         }
 
