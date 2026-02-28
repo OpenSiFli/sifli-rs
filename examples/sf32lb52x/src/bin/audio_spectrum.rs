@@ -28,8 +28,8 @@ use display_driver::bus::QspiFlashBus;
 use display_driver::panel::reset::LCDResetOption;
 use display_driver::{ColorFormat, DisplayDriver};
 use display_driver_co5300::{
-    spec::{Co5300Spec, PanelSpec},
     Co5300,
+    spec::{Co5300Spec, PanelSpec},
 };
 
 use libm::{cosf, log10f, sinf, sqrtf};
@@ -57,7 +57,7 @@ impl Co5300Spec for MyCo5300 {
     const IGNORE_ID_CHECK: bool = true;
 }
 
-#[link_section = ".psram_bss"]
+#[unsafe(link_section = ".psram_bss")]
 static mut FB_BUF: MaybeUninit<[u8; FB_SIZE]> = MaybeUninit::uninit();
 
 bind_interrupts!(struct Irqs {

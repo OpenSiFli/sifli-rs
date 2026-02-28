@@ -1,5 +1,5 @@
-use super::bank1::Bank1Calibration;
 use super::Uid;
+use super::bank1::Bank1Calibration;
 
 fn set_bits(words: &mut [u32; 8], pos: u16, bits: u8, value: u32) {
     for i in 0..bits {

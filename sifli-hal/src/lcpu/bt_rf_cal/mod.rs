@@ -19,11 +19,11 @@ pub mod txdc;
 mod txdc_hw;
 pub mod vco;
 
+use crate::Peripheral;
 use crate::dma::Channel;
 use crate::efuse::{Bank1Calibration, Efuse};
 use crate::pac::{BT_PHY, BT_RFC};
 use crate::rcc::{lp_rfc_reset_asserted, set_lp_rfc_reset};
-use crate::Peripheral;
 
 /// RFC SRAM base address
 const BT_RFC_MEM_BASE: u32 = super::memory_map::rf::BT_RFC_MEM_BASE;

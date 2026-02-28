@@ -219,11 +219,7 @@ impl Dll {
 
     pub const fn freq_hz(&self) -> u32 {
         let base = 24_000_000 * (self.stg.to_bits() as u32 + 1);
-        if self.out_div2 {
-            base / 2
-        } else {
-            base
-        }
+        if self.out_div2 { base / 2 } else { base }
     }
 
     pub const fn with_out_div2(mut self, out_div2: bool) -> Self {

@@ -5,13 +5,13 @@ use core::future::Future;
 use core::pin::Pin as FuturePin;
 use core::task::{Context, Poll};
 
-use embassy_hal_internal::{impl_peripheral, into_ref, PeripheralRef};
+use embassy_hal_internal::{PeripheralRef, impl_peripheral, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 use hpsys::HpsysPin;
 
 use crate::interrupt::InterruptExt;
 use crate::utils::BitIter64;
-use crate::{interrupt, peripherals, Peripheral};
+use crate::{Peripheral, interrupt, peripherals};
 
 // TODO: move this const to _generated.rs
 #[cfg(feature = "sf32lb52x")]
@@ -791,7 +791,7 @@ impl SealedPin for AnyPin {
 // ==========================
 
 macro_rules! impl_pin {
-    ($name:ident, $bank:expr, $pin_num:expr) => {
+    ($name:ident, $bank:expr_2021, $pin_num:expr_2021) => {
         impl Pin for peripherals::$name {}
         impl SealedPin for peripherals::$name {
             #[inline]

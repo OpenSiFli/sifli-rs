@@ -30,10 +30,10 @@
 
 use core::future::poll_fn;
 use core::marker::PhantomData;
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 use core::task::Poll;
 
-use embassy_hal_internal::{into_ref, PeripheralRef};
+use embassy_hal_internal::{PeripheralRef, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 use embassy_time::{Duration, Instant};
 
@@ -42,7 +42,7 @@ use crate::interrupt::typelevel::Interrupt as _;
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac::i2c::I2c as Regs;
 use crate::time::Hertz;
-use crate::{interrupt, rcc, Peripheral};
+use crate::{Peripheral, interrupt, rcc};
 
 /// I2C error
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

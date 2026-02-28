@@ -26,7 +26,7 @@ const LTR_PART_ID: u8 = 0x86; // Part ID (expect 0xA0)
 const LTR_MANUFAC_ID: u8 = 0x87; // Manufacturer ID (expect 0x05)
 const LTR_ALS_STATUS: u8 = 0x8C; // ALS status
 const LTR_ALS_DATA_CH1_0: u8 = 0x88; // CH1 low byte (read CH1 first, then CH0)
-                                     // CH1 high = 0x89, CH0 low = 0x8A, CH0 high = 0x8B
+// CH1 high = 0x89, CH0 low = 0x8A, CH0 high = 0x8B
 
 // ALS_CONTR register bits
 const ALS_MODE_ACTIVE: u8 = 0x01; // Bit 0: active mode
@@ -139,11 +139,7 @@ fn calculate_lux(ch0: u16, ch1: u16) -> u32 {
     } else {
         // CH1 > CH0: dominant IR source (e.g., incandescent, dark with IR noise)
         // Return a rough estimate based on visible portion
-        if c0 > c1 {
-            0
-        } else {
-            c0 / 10
-        }
+        if c0 > c1 { 0 } else { c0 / 10 }
     }
 }
 

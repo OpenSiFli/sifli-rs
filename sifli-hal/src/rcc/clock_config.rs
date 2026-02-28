@@ -5,14 +5,14 @@ use crate::pac::hpsys_rcc::vals::mux::Perisel;
 use crate::pac::{HPSYS_AON, HPSYS_RCC};
 use crate::pac::{HPSYS_CFG, PMUC};
 use crate::time::Hertz;
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 
-use super::{get_freqs, set_freqs};
-use super::{get_hclk_freq, read_hpsys_clocks_from_hw};
 use super::{
     ClockMux, Clocks, Dll, DllStage, HclkPrescaler, Lpsel, Mpisel, PclkPrescaler, Rtcsel, Sysclk,
     Ticksel, Usbsel, Wdtsel,
 };
+use super::{get_freqs, set_freqs};
+use super::{get_hclk_freq, read_hpsys_clocks_from_hw};
 
 /// Clock configuration
 ///
@@ -476,189 +476,191 @@ pub fn reconfigure_sysclk(config: Config) {
 
 // 1. HAL_PreInit
 pub(crate) unsafe fn init(config: Config) {
-    let config = &config.0;
+    unsafe {
+        let config = &config.0;
 
-    // not switch back to XT48 if other clock source has been selected already
-    if HPSYS_RCC.csr().read().sel_sys() == Sysclk::Hxt48 {
-        // HAL_HPAON_EnableXT48
-        HPSYS_AON.acr().modify(|w| w.set_hxt48_req(true));
-        while !HPSYS_AON.acr().read().hxt48_rdy() {
-            // wait until HXT48 ready
-        }
-    }
-
-    HPSYS_RCC.csr().modify(|w| w.set_sel_peri(Perisel::Hxt48));
-
-    const PM_STANDBY_BOOT: u8 = 3;
-
-    if HPSYS_AON.pmr().read().mode() != PM_STANDBY_BOOT {
-        // TODO: wake LCPU
-        // TODO: reset and halt LCPU
-
-        // TODO: BSP_System_Config, get system configure from EFUSE
-
-        // TODO: HAL_HPAON_StartGTimer
-
-        // HAL_PMU_EnableRC32K
-        PMUC.lrc32_cr().modify(|w| w.set_en(true));
-
-        // HAL_PMU_LpCLockSelect(PMU_LPCLK_RC32);
-        PMUC.cr().modify(|w| w.set_sel_lpclk(Wdtsel::Lrc32));
-
-        // HAL_PMU_EnableDLL(1);
-        PMUC.hxt_cr1().modify(|w| w.set_buf_dll_en(true));
-
-        // TODO: LXT init
-
-        // Calibrate HRC48 if requested
-        // IMPORTANT: This must be done AFTER switching to HXT48 or DLL1,
-        // because HRC48 frequency is unknown before calibration
-        if config.hrc48_calibrate {
-            // Ensure we're not running on HRC48
-            let current_sysclk = HPSYS_RCC.csr().read().sel_sys();
-            if current_sysclk == Sysclk::Hrc48 {
-                // Must switch away from HRC48 before calibration
-                if HPSYS_AON.acr().read().hxt48_rdy() {
-                    HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hxt48));
-                } else {
-                    // Cannot calibrate without a stable reference clock
-                    panic!(
-                        "Cannot calibrate HRC48: currently running on HRC48 and HXT48 is not available"
-                    );
-                }
-            }
-
-            if let Err(e) = calibrate_hrc48() {
-                // Calibration failed, but we can continue if not using HRC48
-                debug!("HRC48 calibration warning: {}", e);
+        // not switch back to XT48 if other clock source has been selected already
+        if HPSYS_RCC.csr().read().sel_sys() == Sysclk::Hxt48 {
+            // HAL_HPAON_EnableXT48
+            HPSYS_AON.acr().modify(|w| w.set_hxt48_req(true));
+            while !HPSYS_AON.acr().read().hxt48_rdy() {
+                // wait until HXT48 ready
             }
         }
 
-        // Set dividers first (before DVFS transition)
-        HPSYS_RCC.cfgr().modify(|w| {
-            w.set_hdiv(config.hdiv.0);
-            w.set_pdiv1(config.pdiv1);
-            w.set_pdiv2(config.pdiv2);
-        });
+        HPSYS_RCC.csr().modify(|w| w.set_sel_peri(Perisel::Hxt48));
 
-        let hclk = config.get_hclk_freq();
-        let current_hclk = get_hclk_freq().unwrap_or(Hertz(48_000_000));
+        const PM_STANDBY_BOOT: u8 = 3;
 
-        crate::pmu::dvfs::config_hcpu_dvfs(current_hclk, hclk, || {
-            switch_away_from_dll1();
+        if HPSYS_AON.pmr().read().mode() != PM_STANDBY_BOOT {
+            // TODO: wake LCPU
+            // TODO: reset and halt LCPU
 
-            if let Some(dll1) = config.dll1 {
-                configure_dll1(&dll1);
-            }
+            // TODO: BSP_System_Config, get system configure from EFUSE
 
-            apply_dividers_and_sysclk(config);
-        });
+            // TODO: HAL_HPAON_StartGTimer
 
-        if let Some(ref dll2) = config.dll2 {
-            let current_dll2 = HPSYS_RCC.dllcr(1).read();
-            let need_reconfig = !current_dll2.en()
-                || current_dll2.stg() != dll2.stg
-                || current_dll2.out_div2_en() != dll2.out_div2;
+            // HAL_PMU_EnableRC32K
+            PMUC.lrc32_cr().modify(|w| w.set_en(true));
 
-            if need_reconfig {
-                // Safe DLL2 reconfiguration procedure:
-                // Step 1: Switch Flash/PSRAM (MPI) clocks away from DLL2 to prevent XIP crash
-                let old_mpi1_sel = HPSYS_RCC.csr().read().sel_mpi1();
-                let old_mpi2_sel = HPSYS_RCC.csr().read().sel_mpi2();
+            // HAL_PMU_LpCLockSelect(PMU_LPCLK_RC32);
+            PMUC.cr().modify(|w| w.set_sel_lpclk(Wdtsel::Lrc32));
 
-                // Temporarily switch to clk_peri_hpsys
-                HPSYS_RCC.csr().modify(|w| {
-                    w.set_sel_mpi1(Mpisel::Peri);
-                    w.set_sel_mpi2(Mpisel::Peri);
-                });
+            // HAL_PMU_EnableDLL(1);
+            PMUC.hxt_cr1().modify(|w| w.set_buf_dll_en(true));
 
-                // Step 2: Now safe to reconfigure DLL2
-                if !HPSYS_CFG.cau2_cr().read().hpbg_en() {
-                    HPSYS_CFG.cau2_cr().modify(|w| w.set_hpbg_en(true));
-                }
-                if !HPSYS_CFG.cau2_cr().read().hpbg_vddpsw_en() {
-                    HPSYS_CFG.cau2_cr().modify(|w| w.set_hpbg_vddpsw_en(true));
-                }
+            // TODO: LXT init
 
-                HPSYS_RCC.dllcr(1).modify(|w| w.set_en(false));
-
-                HPSYS_RCC.dllcr(1).modify(|w| {
-                    w.set_in_div2_en(true); // always true
-                    w.set_out_div2_en(dll2.out_div2);
-                    w.set_stg(dll2.stg);
-                    w.set_en(true);
-                });
-
-                // wait for DLL ready, 5us at least
-                cortex_m_blocking_delay_us(10);
-
-                while !HPSYS_RCC.dllcr(1).read().ready() {
-                    // wait for DLL ready
-                }
-
-                // Step 3: Restore MPI clock sources
-                HPSYS_RCC.csr().modify(|w| {
-                    if old_mpi1_sel == Mpisel::Dll2 {
-                        w.set_sel_mpi1(Mpisel::Dll2);
-                    }
-                    if old_mpi2_sel == Mpisel::Dll2 {
-                        w.set_sel_mpi2(Mpisel::Dll2);
-                    }
-                });
-            }
-        }
-
-        // other MUX configuration
-
-        // Configure USB clock only when USB is enabled
-        if config.usb {
-            const USB_TARGET_FREQ: u32 = 60_000_000;
-            let usb_source_freq = match config.mux.usbsel {
-                Usbsel::Sysclk => config.get_sysclk_freq(),
-                Usbsel::Dll2 => {
-                    if let Some(dll2) = config.dll2 {
-                        Hertz(dll2.freq_hz())
+            // Calibrate HRC48 if requested
+            // IMPORTANT: This must be done AFTER switching to HXT48 or DLL1,
+            // because HRC48 frequency is unknown before calibration
+            if config.hrc48_calibrate {
+                // Ensure we're not running on HRC48
+                let current_sysclk = HPSYS_RCC.csr().read().sel_sys();
+                if current_sysclk == Sysclk::Hrc48 {
+                    // Must switch away from HRC48 before calibration
+                    if HPSYS_AON.acr().read().hxt48_rdy() {
+                        HPSYS_RCC.csr().modify(|w| w.set_sel_sys(Sysclk::Hxt48));
                     } else {
-                        panic!("DLL2 is not configured, cannot configure USB clock");
+                        // Cannot calibrate without a stable reference clock
+                        panic!(
+                            "Cannot calibrate HRC48: currently running on HRC48 and HXT48 is not available"
+                        );
                     }
                 }
-            };
 
-            let usb_div = (usb_source_freq.0 / USB_TARGET_FREQ) as u8;
-            HPSYS_RCC.usbcr().modify(|w| w.set_div(usb_div));
-            HPSYS_RCC.csr().modify(|w| {
-                w.set_sel_usbc(config.mux.usbsel);
+                if let Err(e) = calibrate_hrc48() {
+                    // Calibration failed, but we can continue if not using HRC48
+                    debug!("HRC48 calibration warning: {}", e);
+                }
+            }
+
+            // Set dividers first (before DVFS transition)
+            HPSYS_RCC.cfgr().modify(|w| {
+                w.set_hdiv(config.hdiv.0);
+                w.set_pdiv1(config.pdiv1);
+                w.set_pdiv2(config.pdiv2);
             });
+
+            let hclk = config.get_hclk_freq();
+            let current_hclk = get_hclk_freq().unwrap_or(Hertz(48_000_000));
+
+            crate::pmu::dvfs::config_hcpu_dvfs(current_hclk, hclk, || {
+                switch_away_from_dll1();
+
+                if let Some(dll1) = config.dll1 {
+                    configure_dll1(&dll1);
+                }
+
+                apply_dividers_and_sysclk(config);
+            });
+
+            if let Some(ref dll2) = config.dll2 {
+                let current_dll2 = HPSYS_RCC.dllcr(1).read();
+                let need_reconfig = !current_dll2.en()
+                    || current_dll2.stg() != dll2.stg
+                    || current_dll2.out_div2_en() != dll2.out_div2;
+
+                if need_reconfig {
+                    // Safe DLL2 reconfiguration procedure:
+                    // Step 1: Switch Flash/PSRAM (MPI) clocks away from DLL2 to prevent XIP crash
+                    let old_mpi1_sel = HPSYS_RCC.csr().read().sel_mpi1();
+                    let old_mpi2_sel = HPSYS_RCC.csr().read().sel_mpi2();
+
+                    // Temporarily switch to clk_peri_hpsys
+                    HPSYS_RCC.csr().modify(|w| {
+                        w.set_sel_mpi1(Mpisel::Peri);
+                        w.set_sel_mpi2(Mpisel::Peri);
+                    });
+
+                    // Step 2: Now safe to reconfigure DLL2
+                    if !HPSYS_CFG.cau2_cr().read().hpbg_en() {
+                        HPSYS_CFG.cau2_cr().modify(|w| w.set_hpbg_en(true));
+                    }
+                    if !HPSYS_CFG.cau2_cr().read().hpbg_vddpsw_en() {
+                        HPSYS_CFG.cau2_cr().modify(|w| w.set_hpbg_vddpsw_en(true));
+                    }
+
+                    HPSYS_RCC.dllcr(1).modify(|w| w.set_en(false));
+
+                    HPSYS_RCC.dllcr(1).modify(|w| {
+                        w.set_in_div2_en(true); // always true
+                        w.set_out_div2_en(dll2.out_div2);
+                        w.set_stg(dll2.stg);
+                        w.set_en(true);
+                    });
+
+                    // wait for DLL ready, 5us at least
+                    cortex_m_blocking_delay_us(10);
+
+                    while !HPSYS_RCC.dllcr(1).read().ready() {
+                        // wait for DLL ready
+                    }
+
+                    // Step 3: Restore MPI clock sources
+                    HPSYS_RCC.csr().modify(|w| {
+                        if old_mpi1_sel == Mpisel::Dll2 {
+                            w.set_sel_mpi1(Mpisel::Dll2);
+                        }
+                        if old_mpi2_sel == Mpisel::Dll2 {
+                            w.set_sel_mpi2(Mpisel::Dll2);
+                        }
+                    });
+                }
+            }
+
+            // other MUX configuration
+
+            // Configure USB clock only when USB is enabled
+            if config.usb {
+                const USB_TARGET_FREQ: u32 = 60_000_000;
+                let usb_source_freq = match config.mux.usbsel {
+                    Usbsel::Sysclk => config.get_sysclk_freq(),
+                    Usbsel::Dll2 => {
+                        if let Some(dll2) = config.dll2 {
+                            Hertz(dll2.freq_hz())
+                        } else {
+                            panic!("DLL2 is not configured, cannot configure USB clock");
+                        }
+                    }
+                };
+
+                let usb_div = (usb_source_freq.0 / USB_TARGET_FREQ) as u8;
+                HPSYS_RCC.usbcr().modify(|w| w.set_div(usb_div));
+                HPSYS_RCC.csr().modify(|w| {
+                    w.set_sel_usbc(config.mux.usbsel);
+                });
+            }
+
+            // Configure peripheral clock according to config.mux.perisel
+            HPSYS_RCC.csr().modify(|w| {
+                w.set_sel_peri(config.mux.perisel);
+            });
+
+            // Configure low-power clock (for WDT) according to config.mux.wdtsel
+            PMUC.cr().modify(|w| {
+                w.set_sel_lpclk(config.mux.wdtsel);
+            });
+
+            // Configure RTC clock
+            // TODO: Uncomment when RTC peripheral is added to PAC
+            // crate::pac::RTC.cr().modify(|w| {
+            //     w.set_lpcksel(config.mux.rtcsel);
+            // });
+
+            // Configure system tick clock according to config.mux.ticksel
+            HPSYS_RCC
+                .csr()
+                .modify(|w| w.set_sel_tick(config.mux.ticksel));
         }
 
-        // Configure peripheral clock according to config.mux.perisel
-        HPSYS_RCC.csr().modify(|w| {
-            w.set_sel_peri(config.mux.perisel);
-        });
+        // Store the final clock frequencies for later access via clocks()
+        // This must run on both normal boot and standby boot paths,
+        // because CLOCK_FREQS lives in RAM which is lost during standby.
+        let final_clocks = read_hpsys_clocks_from_hw();
 
-        // Configure low-power clock (for WDT) according to config.mux.wdtsel
-        PMUC.cr().modify(|w| {
-            w.set_sel_lpclk(config.mux.wdtsel);
-        });
-
-        // Configure RTC clock
-        // TODO: Uncomment when RTC peripheral is added to PAC
-        // crate::pac::RTC.cr().modify(|w| {
-        //     w.set_lpcksel(config.mux.rtcsel);
-        // });
-
-        // Configure system tick clock according to config.mux.ticksel
-        HPSYS_RCC
-            .csr()
-            .modify(|w| w.set_sel_tick(config.mux.ticksel));
+        set_freqs(final_clocks);
     }
-
-    // Store the final clock frequencies for later access via clocks()
-    // This must run on both normal boot and standby boot paths,
-    // because CLOCK_FREQS lives in RAM which is lost during standby.
-    let final_clocks = read_hpsys_clocks_from_hw();
-
-    set_freqs(final_clocks);
 }
 
 /// Calibrate HRC48 (48MHz internal RC oscillator) against HXT48 (external crystal)

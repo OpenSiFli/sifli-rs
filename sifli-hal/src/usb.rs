@@ -10,8 +10,8 @@ use musb::{Bus, ControlPipe, Endpoint, In, MusbDriver, Out, UsbInstance};
 use crate::gpio::hpsys::HpsysPin;
 use crate::interrupt::typelevel::Interrupt;
 use crate::pac::HPSYS_CFG;
-use crate::rcc::{get_clk_usb_div, get_clk_usb_source, RccEnableReset, RccGetFreq};
-use crate::{interrupt, Peripheral};
+use crate::rcc::{RccEnableReset, RccGetFreq, get_clk_usb_div, get_clk_usb_source};
+use crate::{Peripheral, interrupt};
 
 fn init<T: Instance>() {
     let freq = T::frequency();
@@ -151,7 +151,9 @@ pub struct InterruptHandler<T: Instance> {
 
 impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
     unsafe fn on_interrupt() {
-        musb::on_interrupt::<UsbInstance>();
+        unsafe {
+            musb::on_interrupt::<UsbInstance>();
+        }
     }
 }
 

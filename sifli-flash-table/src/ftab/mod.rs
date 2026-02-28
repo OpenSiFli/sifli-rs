@@ -19,9 +19,15 @@ impl Ftab {
 
     // Apply the partition table to the flash table
     pub fn apply(&mut self, table: &ptab::Ptab) {
-        self.structure.ftab.secure_config.apply_info(&table.flash_table_info);
+        self.structure
+            .ftab
+            .secure_config
+            .apply_info(&table.flash_table_info);
 
-        self.structure.ftab.factory_calibration.apply_info(&table.flash_cal_info);
+        self.structure
+            .ftab
+            .factory_calibration
+            .apply_info(&table.flash_cal_info);
 
         let used_hcpu = if let Some(hcpu_info) = table.hcpu_code_info.clone() {
             self.structure.ftab.hcpu.apply_info(&hcpu_info);
@@ -50,19 +56,30 @@ impl Ftab {
         // };
 
         // they are different:
-        self.structure.ftab.primary_bl_patch.apply_info(&table.primary_bl_patch_info);
-        self.structure.ftab.primary_bl_patch2.apply_info(&table.primary_bl_patch2_info);
+        self.structure
+            .ftab
+            .primary_bl_patch
+            .apply_info(&table.primary_bl_patch_info);
+        self.structure
+            .ftab
+            .primary_bl_patch2
+            .apply_info(&table.primary_bl_patch2_info);
 
-        self.structure.ftab.secondary_bl.apply_info(&table.secondary_bl_info);
-        self.structure.ftab.secondary_bl2.apply_info(&table.secondary_bl_info);
-        
+        self.structure
+            .ftab
+            .secondary_bl
+            .apply_info(&table.secondary_bl_info);
+        self.structure
+            .ftab
+            .secondary_bl2
+            .apply_info(&table.secondary_bl_info);
+
         if used_hcpu {
             // TODO: real size
             self.structure.imgs.hcpu.length = 0x0020_0000;
             self.structure.imgs.hcpu.blksize = 512;
             self.structure.imgs.hcpu.flags = DFU_FLAG_AUTO;
-        }
-        else {
+        } else {
             self.structure.imgs.hcpu.length = 0xFFFFFFFF;
         }
 
@@ -92,11 +109,10 @@ impl Ftab {
         self.structure.imgs.single.length = 0xFFFFFFFF;
 
         self.structure.running_imgs.hcpu = if used_hcpu {
-            (offset_of!(structure::SecConfiguration, imgs)
-                + offset_of!(structure::Imgs, hcpu)) as u32
+            (offset_of!(structure::SecConfiguration, imgs) + offset_of!(structure::Imgs, hcpu))
+                as u32
                 + table.flash_table_info.base_addr
-        }
-        else {
+        } else {
             0xFFFFFFFF
         };
 
@@ -108,21 +124,15 @@ impl Ftab {
         // else {
         //     0xFFFFFFFF
         // };
-        
+
         self.structure.running_imgs.secondary_bl = (offset_of!(structure::SecConfiguration, imgs)
-            + offset_of!(structure::Imgs, secondary_bl)) as u32
+            + offset_of!(structure::Imgs, secondary_bl))
+            as u32
             + table.flash_table_info.base_addr
-        
     }
 
-
     pub fn to_bytes(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (self as *const Self) as *const u8,
-                size_of::<Self>()
-            )
-        }
+        unsafe { std::slice::from_raw_parts((self as *const Self) as *const u8, size_of::<Self>()) }
     }
 }
 

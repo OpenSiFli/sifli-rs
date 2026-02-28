@@ -1,6 +1,6 @@
 use crate::gpio::{Drive, Level, Pull, SlewRate};
-use crate::pac::hpsys_gpio::{regs, HpsysGpio};
-use crate::pac::hpsys_pinmux::{vals, HpsysPinmux};
+use crate::pac::hpsys_gpio::{HpsysGpio, regs};
+use crate::pac::hpsys_pinmux::{HpsysPinmux, vals};
 
 use super::{AfType, InterruptTrigger};
 

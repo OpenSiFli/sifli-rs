@@ -2,7 +2,7 @@
 
 use core::future::poll_fn;
 use core::marker::PhantomData;
-use core::sync::atomic::{compiler_fence, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering, compiler_fence};
 use core::task::Poll;
 
 use embassy_hal_internal::Peripheral;
@@ -11,11 +11,11 @@ use sifli_pac::HPSYS_CFG;
 
 use crate::_generated::{FIRST_CHANNEL_PIN, VBAT_CHANNEL_ID, VOL_OFFSET, VOL_RATIO};
 use crate::gpio::{self, Analog};
-use crate::interrupt::typelevel::Binding;
 use crate::interrupt::InterruptExt;
+use crate::interrupt::typelevel::Binding;
 use crate::mode::{Async, Blocking, Mode};
-use crate::pac::gpadc::vals as AdcVals;
 use crate::pac::GPADC;
+use crate::pac::gpadc::vals as AdcVals;
 use crate::peripherals;
 use crate::{blocking_delay_us, interrupt, rcc};
 

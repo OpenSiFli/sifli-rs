@@ -22,7 +22,7 @@
 
 use crate::dma::{self, Channel, Increment, Transfer, TransferOptions};
 use crate::pac::{BT_PHY, BT_RFC, PMUC};
-use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 
 /// Number of power levels for TXDC calibration
 pub const NUM_POWER_LEVELS: usize = 7;

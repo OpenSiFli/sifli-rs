@@ -2,12 +2,12 @@
 // https://github.com/embassy-rs/embassy/tree/main/embassy-stm32
 // Special thanks to the Embassy Project and its contributors for their work!
 
-use core::future::{poll_fn, Future};
+use core::future::{Future, poll_fn};
 use core::pin::Pin;
-use core::sync::atomic::{fence, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, fence};
 use core::task::{Context, Poll, Waker};
 
-use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 
 use super::ringbuffer::{DmaCtrl, Error, ReadableDmaRingBuffer, WritableDmaRingBuffer};
@@ -169,91 +169,93 @@ impl AnyChannel {
         peri_size: WordSize,
         options: TransferOptions,
     ) {
-        // "Preceding reads and writes cannot be moved past subsequent writes."
-        fence(Ordering::SeqCst);
+        unsafe {
+            // "Preceding reads and writes cannot be moved past subsequent writes."
+            fence(Ordering::SeqCst);
 
-        let info = self.info();
-        let r = info.dma;
-        let state: &ChannelState = &STATE[self.state_index()];
-        let channel_num = info.num;
+            let info = self.info();
+            let r = info.dma;
+            let state: &ChannelState = &STATE[self.state_index()];
+            let channel_num = info.num;
 
-        state.complete_count.store(0, Ordering::Release);
-        self.clear_irqs();
+            state.complete_count.store(0, Ordering::Release);
+            self.clear_irqs();
 
-        // NDTR is the number of transfers in the *peripheral* word size.
-        // ex: if mem_size=1, peri_size=4 and ndtr=3 it'll do 12 mem transfers, 3 peri transfers.
-        let ndtr = match (mem_size, peri_size) {
-            (WordSize::FourBytes, WordSize::OneByte) => mem_len * 4,
-            (WordSize::FourBytes, WordSize::TwoBytes) | (WordSize::TwoBytes, WordSize::OneByte) => {
-                mem_len * 2
-            }
-            (WordSize::FourBytes, WordSize::FourBytes)
-            | (WordSize::TwoBytes, WordSize::TwoBytes)
-            | (WordSize::OneByte, WordSize::OneByte) => mem_len,
-            (WordSize::TwoBytes, WordSize::FourBytes) | (WordSize::OneByte, WordSize::TwoBytes) => {
-                assert!(mem_len % 2 == 0);
-                mem_len / 2
-            }
-            (WordSize::OneByte, WordSize::FourBytes) => {
-                assert!(mem_len % 4 == 0);
-                mem_len / 4
-            }
-        };
-
-        assert!(ndtr > 0 && ndtr <= 0xFFFF);
-
-        // In M2M mode CPAR is also a memory address, apply remap for flash addresses
-        let peri_addr = if mem2mem {
-            crate::to_system_bus_addr(peri_addr as _) as _
-        } else {
-            peri_addr as u32
-        };
-        r.cpar(channel_num)
-            .write_value(pac::dmac::regs::Cpar(peri_addr));
-
-        r.cm0ar(channel_num)
-            .write_value(pac::dmac::regs::Cm0ar(
-                crate::to_system_bus_addr(mem_addr as _) as _,
-            ));
-        r.cndtr(channel_num)
-            .write_value(pac::dmac::regs::Cndtr(ndtr as _));
-        r.cselr(channel_num / 4)
-            .modify(|w| w.set_cs(channel_num % 4, request as u8));
-        r.ccr(channel_num).write(|w| {
-            w.set_dir(dir.into());
-            w.set_msize(mem_size.into());
-            w.set_psize(peri_size.into());
-            w.set_pl(options.priority.into());
-            match incr {
-                Increment::None => {
-                    w.set_minc(false);
-                    w.set_pinc(false);
+            // NDTR is the number of transfers in the *peripheral* word size.
+            // ex: if mem_size=1, peri_size=4 and ndtr=3 it'll do 12 mem transfers, 3 peri transfers.
+            let ndtr = match (mem_size, peri_size) {
+                (WordSize::FourBytes, WordSize::OneByte) => mem_len * 4,
+                (WordSize::FourBytes, WordSize::TwoBytes)
+                | (WordSize::TwoBytes, WordSize::OneByte) => mem_len * 2,
+                (WordSize::FourBytes, WordSize::FourBytes)
+                | (WordSize::TwoBytes, WordSize::TwoBytes)
+                | (WordSize::OneByte, WordSize::OneByte) => mem_len,
+                (WordSize::TwoBytes, WordSize::FourBytes)
+                | (WordSize::OneByte, WordSize::TwoBytes) => {
+                    assert!(mem_len % 2 == 0);
+                    mem_len / 2
                 }
-                Increment::Peripheral => {
-                    w.set_minc(false);
-                    w.set_pinc(true);
+                (WordSize::OneByte, WordSize::FourBytes) => {
+                    assert!(mem_len % 4 == 0);
+                    mem_len / 4
                 }
-                Increment::Memory => {
-                    w.set_minc(true);
-                    w.set_pinc(false);
-                }
-                Increment::Both => {
-                    w.set_minc(true);
-                    w.set_pinc(true);
-                }
-            }
-            w.set_teie(true);
-            w.set_htie(options.half_transfer_ir);
-            w.set_tcie(options.complete_transfer_ir);
-            w.set_circ(options.circular);
-            w.set_mem2mem(mem2mem);
-            w.set_en(false);
-        });
+            };
 
-        crate::_generated::enable_dma_channel_interrupt_priority(
-            self.id,
-            options.interrupt_priority,
-        );
+            assert!(ndtr > 0 && ndtr <= 0xFFFF);
+
+            // In M2M mode CPAR is also a memory address, apply remap for flash addresses
+            let peri_addr = if mem2mem {
+                crate::to_system_bus_addr(peri_addr as _) as _
+            } else {
+                peri_addr as u32
+            };
+            r.cpar(channel_num)
+                .write_value(pac::dmac::regs::Cpar(peri_addr));
+
+            r.cm0ar(channel_num)
+                .write_value(pac::dmac::regs::Cm0ar(
+                    crate::to_system_bus_addr(mem_addr as _) as _,
+                ));
+            r.cndtr(channel_num)
+                .write_value(pac::dmac::regs::Cndtr(ndtr as _));
+            r.cselr(channel_num / 4)
+                .modify(|w| w.set_cs(channel_num % 4, request as u8));
+            r.ccr(channel_num).write(|w| {
+                w.set_dir(dir.into());
+                w.set_msize(mem_size.into());
+                w.set_psize(peri_size.into());
+                w.set_pl(options.priority.into());
+                match incr {
+                    Increment::None => {
+                        w.set_minc(false);
+                        w.set_pinc(false);
+                    }
+                    Increment::Peripheral => {
+                        w.set_minc(false);
+                        w.set_pinc(true);
+                    }
+                    Increment::Memory => {
+                        w.set_minc(true);
+                        w.set_pinc(false);
+                    }
+                    Increment::Both => {
+                        w.set_minc(true);
+                        w.set_pinc(true);
+                    }
+                }
+                w.set_teie(true);
+                w.set_htie(options.half_transfer_ir);
+                w.set_tcie(options.complete_transfer_ir);
+                w.set_circ(options.circular);
+                w.set_mem2mem(mem2mem);
+                w.set_en(false);
+            });
+
+            crate::_generated::enable_dma_channel_interrupt_priority(
+                self.id,
+                options.interrupt_priority,
+            );
+        }
     }
 
     fn start(&self) {
@@ -356,7 +358,7 @@ impl<'a> Transfer<'a> {
         buf: &'a mut [W],
         options: TransferOptions,
     ) -> Self {
-        Self::new_read_raw(channel, request, peri_addr, buf, options)
+        unsafe { Self::new_read_raw(channel, request, peri_addr, buf, options) }
     }
 
     /// Create a new read DMA transfer (peripheral to memory), using raw pointers.
@@ -383,20 +385,22 @@ impl<'a> Transfer<'a> {
         buf: *mut [MW],
         options: TransferOptions,
     ) -> Self {
-        into_ref!(channel);
+        unsafe {
+            into_ref!(channel);
 
-        Self::new_inner(
-            channel.map_into(),
-            request,
-            Dir::PeripheralToMemory,
-            peri_addr as *const u32,
-            buf as *mut MW as *mut u32,
-            buf.len(),
-            Increment::Memory,
-            MW::size(),
-            PW::size(),
-            options,
-        )
+            Self::new_inner(
+                channel.map_into(),
+                request,
+                Dir::PeripheralToMemory,
+                peri_addr as *const u32,
+                buf as *mut MW as *mut u32,
+                buf.len(),
+                Increment::Memory,
+                MW::size(),
+                PW::size(),
+                options,
+            )
+        }
     }
 
     /// Create a new write DMA transfer (memory to peripheral).
@@ -423,7 +427,7 @@ impl<'a> Transfer<'a> {
         peri_addr: *mut PW,
         options: TransferOptions,
     ) -> Self {
-        Self::new_write_raw(channel, request, buf, peri_addr, options)
+        unsafe { Self::new_write_raw(channel, request, buf, peri_addr, options) }
     }
 
     /// Create a new write DMA transfer (memory to peripheral), using raw pointers.
@@ -453,20 +457,22 @@ impl<'a> Transfer<'a> {
         peri_addr: *mut PW,
         options: TransferOptions,
     ) -> Self {
-        into_ref!(channel);
+        unsafe {
+            into_ref!(channel);
 
-        Self::new_inner(
-            channel.map_into(),
-            request,
-            Dir::MemoryToPeripheral,
-            peri_addr as *const u32,
-            buf as *const MW as *mut u32,
-            buf.len(),
-            Increment::Memory,
-            MW::size(),
-            PW::size(),
-            options,
-        )
+            Self::new_inner(
+                channel.map_into(),
+                request,
+                Dir::MemoryToPeripheral,
+                peri_addr as *const u32,
+                buf as *const MW as *mut u32,
+                buf.len(),
+                Increment::Memory,
+                MW::size(),
+                PW::size(),
+                options,
+            )
+        }
     }
 
     /// Create a new write DMA transfer (memory to peripheral), writing the same value repeatedly.
@@ -498,20 +504,22 @@ impl<'a> Transfer<'a> {
         peri_addr: *mut W,
         options: TransferOptions,
     ) -> Self {
-        into_ref!(channel);
+        unsafe {
+            into_ref!(channel);
 
-        Self::new_inner(
-            channel.map_into(),
-            request,
-            Dir::MemoryToPeripheral,
-            peri_addr as *const u32,
-            repeated as *const W as *mut u32,
-            count,
-            Increment::None,
-            W::size(),
-            W::size(),
-            options,
-        )
+            Self::new_inner(
+                channel.map_into(),
+                request,
+                Dir::MemoryToPeripheral,
+                peri_addr as *const u32,
+                repeated as *const W as *mut u32,
+                count,
+                Increment::None,
+                W::size(),
+                W::size(),
+                options,
+            )
+        }
     }
 
     /// Create a new memory-to-memory DMA transfer.
@@ -544,15 +552,17 @@ impl<'a> Transfer<'a> {
         dst: &'a mut [W],
         options: TransferOptions,
     ) -> Self {
-        assert!(src.len() == dst.len());
-        Self::new_transfer_raw(
-            channel,
-            src.as_ptr(),
-            dst.as_mut_ptr(),
-            src.len(),
-            Increment::Both,
-            options,
-        )
+        unsafe {
+            assert!(src.len() == dst.len());
+            Self::new_transfer_raw(
+                channel,
+                src.as_ptr(),
+                dst.as_mut_ptr(),
+                src.len(),
+                Increment::Both,
+                options,
+            )
+        }
     }
 
     /// Create a memory-to-memory DMA transfer with raw pointers.
@@ -602,25 +612,27 @@ impl<'a> Transfer<'a> {
         incr: Increment,
         options: TransferOptions,
     ) -> Self {
-        into_ref!(channel);
-        assert!(count > 0 && count <= 0xFFFF);
+        unsafe {
+            into_ref!(channel);
+            assert!(count > 0 && count <= 0xFFFF);
 
-        let channel: PeripheralRef<'a, AnyChannel> = channel.map_into();
-        // M2M mode ignores the request field; use Mpi1 as a dummy value.
-        channel.configure(
-            Request::Mpi1,
-            Dir::PeripheralToMemory,
-            src as *const u32,
-            dst as *mut u32,
-            count,
-            incr,
-            true,
-            W::size(),
-            W::size(),
-            options,
-        );
-        channel.start();
-        Self { channel }
+            let channel: PeripheralRef<'a, AnyChannel> = channel.map_into();
+            // M2M mode ignores the request field; use Mpi1 as a dummy value.
+            channel.configure(
+                Request::Mpi1,
+                Dir::PeripheralToMemory,
+                src as *const u32,
+                dst as *mut u32,
+                count,
+                incr,
+                true,
+                W::size(),
+                W::size(),
+                options,
+            );
+            channel.start();
+            Self { channel }
+        }
     }
 
     unsafe fn new_inner(
@@ -635,13 +647,16 @@ impl<'a> Transfer<'a> {
         peri_size: WordSize,
         options: TransferOptions,
     ) -> Self {
-        assert!(mem_len > 0 && mem_len <= 0xFFFF);
+        unsafe {
+            assert!(mem_len > 0 && mem_len <= 0xFFFF);
 
-        channel.configure(
-            request, dir, peri_addr, mem_addr, mem_len, incr, false, mem_size, peri_size, options,
-        );
-        channel.start();
-        Self { channel }
+            channel.configure(
+                request, dir, peri_addr, mem_addr, mem_len, incr, false, mem_size, peri_size,
+                options,
+            );
+            channel.start();
+            Self { channel }
+        }
     }
 
     /// Request the transfer to stop.
@@ -828,34 +843,36 @@ impl<'a, W: Word> ReadableRingBuffer<'a, W> {
         buffer: &'a mut [W],
         mut options: TransferOptions,
     ) -> Self {
-        into_ref!(channel);
-        let channel: PeripheralRef<'a, AnyChannel> = channel.map_into();
+        unsafe {
+            into_ref!(channel);
+            let channel: PeripheralRef<'a, AnyChannel> = channel.map_into();
 
-        let buffer_ptr = buffer.as_mut_ptr();
-        let len = buffer.len();
-        let dir = Dir::PeripheralToMemory;
-        let data_size = W::size();
+            let buffer_ptr = buffer.as_mut_ptr();
+            let len = buffer.len();
+            let dir = Dir::PeripheralToMemory;
+            let data_size = W::size();
 
-        options.half_transfer_ir = true;
-        options.complete_transfer_ir = true;
-        options.circular = true;
+            options.half_transfer_ir = true;
+            options.complete_transfer_ir = true;
+            options.circular = true;
 
-        channel.configure(
-            request,
-            dir,
-            peri_addr as *mut u32,
-            buffer_ptr as *mut u32,
-            len,
-            Increment::Memory,
-            false,
-            data_size,
-            data_size,
-            options,
-        );
+            channel.configure(
+                request,
+                dir,
+                peri_addr as *mut u32,
+                buffer_ptr as *mut u32,
+                len,
+                Increment::Memory,
+                false,
+                data_size,
+                data_size,
+                options,
+            );
 
-        Self {
-            channel,
-            ringbuf: ReadableDmaRingBuffer::new(buffer),
+            Self {
+                channel,
+                ringbuf: ReadableDmaRingBuffer::new(buffer),
+            }
         }
     }
 
@@ -1005,34 +1022,36 @@ impl<'a, W: Word> WritableRingBuffer<'a, W> {
         buffer: &'a mut [W],
         mut options: TransferOptions,
     ) -> Self {
-        into_ref!(channel);
-        let channel: PeripheralRef<'a, AnyChannel> = channel.map_into();
+        unsafe {
+            into_ref!(channel);
+            let channel: PeripheralRef<'a, AnyChannel> = channel.map_into();
 
-        let len = buffer.len();
-        let dir = Dir::MemoryToPeripheral;
-        let data_size = W::size();
-        let buffer_ptr = buffer.as_mut_ptr();
+            let len = buffer.len();
+            let dir = Dir::MemoryToPeripheral;
+            let data_size = W::size();
+            let buffer_ptr = buffer.as_mut_ptr();
 
-        options.half_transfer_ir = true;
-        options.complete_transfer_ir = true;
-        options.circular = true;
+            options.half_transfer_ir = true;
+            options.complete_transfer_ir = true;
+            options.circular = true;
 
-        channel.configure(
-            request,
-            dir,
-            peri_addr as *mut u32,
-            buffer_ptr as *mut u32,
-            len,
-            Increment::Memory,
-            false,
-            data_size,
-            data_size,
-            options,
-        );
+            channel.configure(
+                request,
+                dir,
+                peri_addr as *mut u32,
+                buffer_ptr as *mut u32,
+                len,
+                Increment::Memory,
+                false,
+                data_size,
+                data_size,
+                options,
+            );
 
-        Self {
-            channel,
-            ringbuf: WritableDmaRingBuffer::new(buffer),
+            Self {
+                channel,
+                ringbuf: WritableDmaRingBuffer::new(buffer),
+            }
         }
     }
 

@@ -112,7 +112,7 @@ const TOTAL_BEATS: usize = 64;
 const TOTAL_SAMPLES: usize = TOTAL_BEATS * SAMPLES_PER_BEAT; // 1,536,000
 
 // Melody data in PSRAM (CPU-accessible, but DMAC1 cannot read it directly)
-#[link_section = ".psram_bss"]
+#[unsafe(link_section = ".psram_bss")]
 static mut MELODY_DATA: [u32; TOTAL_SAMPLES] = [0u32; TOTAL_SAMPLES];
 
 // DMA ring buffer in SRAM — WritableRingBuffer needs mutable access

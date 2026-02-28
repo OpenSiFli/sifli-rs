@@ -69,10 +69,10 @@ mod circular_buf;
 use core::future::poll_fn;
 use core::marker::PhantomData;
 use core::mem;
-use core::sync::atomic::{fence, AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering, fence};
 use core::task::Poll;
 
-use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 
 use crate::interrupt::{self, InterruptExt};

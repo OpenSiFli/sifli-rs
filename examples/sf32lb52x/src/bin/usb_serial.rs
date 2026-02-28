@@ -20,9 +20,9 @@ use embassy_executor::Spawner;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
-use embassy_usb::UsbDevice;
 
 use sifli_hal::bind_interrupts;
 use sifli_hal::rcc::Usbsel;

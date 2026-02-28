@@ -18,8 +18,8 @@ use embassy_time::{Duration, Timer};
 use sifli_hal::bt_hci::BleController;
 use sifli_hal::lcpu::LcpuConfig;
 use sifli_hal::rcc::{
-    clocks, reconfigure_sysclk, Config as RccConfig, ConfigBuilder, Dll, DllStage, HclkPrescaler,
-    PclkPrescaler, Sysclk,
+    Config as RccConfig, ConfigBuilder, Dll, DllStage, HclkPrescaler, PclkPrescaler, Sysclk,
+    clocks, reconfigure_sysclk,
 };
 use sifli_hal::rng::Rng;
 use sifli_hal::usart::{self, Config as UsartConfig, Uart};

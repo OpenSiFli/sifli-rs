@@ -2,14 +2,14 @@
 
 use core::future::poll_fn;
 use core::marker::PhantomData;
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 use core::task::Poll;
 
 use embassy_hal_internal::Peripheral;
 use embassy_sync::waitqueue::AtomicWaker;
 
-use crate::interrupt::typelevel::Binding;
 use crate::interrupt::InterruptExt;
+use crate::interrupt::typelevel::Binding;
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac::TRNG;
 use crate::{interrupt, peripherals, rcc};

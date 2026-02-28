@@ -8,21 +8,21 @@
 
 use core::future::poll_fn;
 use core::marker::PhantomData;
-use core::sync::atomic::{compiler_fence, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, Ordering, compiler_fence};
 use core::task::Poll;
 
 use embassy_embedded_hal::SetConfig;
-use embassy_hal_internal::drop::OnDrop;
 use embassy_hal_internal::PeripheralRef;
+use embassy_hal_internal::drop::OnDrop;
 use embassy_sync::waitqueue::AtomicWaker;
-use futures_util::future::{select, Either};
+use futures_util::future::{Either, select};
 
 use crate::dma::ChannelAndRequest;
 use crate::gpio::{AfType, AnyPin, Pull, SealedPin};
-use crate::interrupt::{self, typelevel::Interrupt as _, Interrupt};
+use crate::interrupt::{self, Interrupt, typelevel::Interrupt as _};
 use crate::mode::{Async, Blocking, Mode};
 use crate::time::Hertz;
-use crate::{rcc, Peripheral};
+use crate::{Peripheral, rcc};
 
 use crate::pac::usart::Usart as Regs;
 use crate::pac::usart::{regs, vals};
@@ -34,7 +34,7 @@ pub struct InterruptHandler<T: Instance> {
 
 impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
     unsafe fn on_interrupt() {
-        on_interrupt(T::regs(), T::state())
+        unsafe { on_interrupt(T::regs(), T::state()) }
     }
 }
 
@@ -1798,7 +1798,7 @@ dma_trait!(TxDma, Instance);
 dma_trait!(RxDma, Instance);
 
 macro_rules! impl_usart {
-    ($inst:ident, $irq:ident, $kind:expr) => {
+    ($inst:ident, $irq:ident, $kind:expr_2021) => {
         #[allow(private_interfaces)]
         impl SealedInstance for crate::peripherals::$inst {
             fn regs() -> Regs {

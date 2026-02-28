@@ -6,8 +6,8 @@
 //! `CAL_ADDR_REG1/2/3`.
 
 #[cfg(feature = "edr-cal")]
-use super::edr_lo::{EdrLoCalResult, DPSK_GAIN_INITIAL};
-use super::txdc::{TxdcCalResult, NUM_POWER_LEVELS};
+use super::edr_lo::{DPSK_GAIN_INITIAL, EdrLoCalResult};
+use super::txdc::{NUM_POWER_LEVELS, TxdcCalResult};
 use super::vco::VcoCalResult;
 use crate::pac::BT_RFC;
 

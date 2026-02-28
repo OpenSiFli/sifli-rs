@@ -7,7 +7,7 @@
 //! - **Streaming**: [`start_stream`](AudioAdc::start_stream) — continuous recording via ring buffer
 
 use core::marker::PhantomData;
-use embassy_hal_internal::{into_ref, PeripheralRef};
+use embassy_hal_internal::{PeripheralRef, into_ref};
 
 use super::codec;
 use super::{AdcConfig, ChannelMode, Error, RxCh0Dma};
@@ -15,7 +15,7 @@ use crate::aud_pll::AudioPll;
 use crate::dma::{ChannelAndRequest, ReadableRingBuffer, TransferOptions};
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac;
-use crate::{rcc, Peripheral};
+use crate::{Peripheral, rcc};
 
 fn audprc() -> pac::audprc::Audprc {
     pac::AUDPRC
@@ -46,8 +46,10 @@ fn rx_ch0_disable() {
 /// # Safety
 /// The caller must ensure the address and size are valid.
 unsafe fn invalidate_dcache(addr: usize, size: usize) {
-    let mut scb = cortex_m::Peripherals::steal().SCB;
-    scb.invalidate_dcache_by_address(addr, size);
+    unsafe {
+        let mut scb = cortex_m::Peripherals::steal().SCB;
+        scb.invalidate_dcache_by_address(addr, size);
+    }
 }
 
 /// Audio ADC driver.
@@ -132,9 +134,9 @@ impl<'d> AudioAdc<'d, Async> {
         rx_dma: impl Peripheral<P = impl RxCh0Dma<crate::peripherals::AUDPRC>> + 'd,
         pll: &'d AudioPll,
         _irq: impl crate::interrupt::typelevel::Binding<
-                crate::interrupt::typelevel::AUDPRC,
-                super::InterruptHandler,
-            > + 'd,
+            crate::interrupt::typelevel::AUDPRC,
+            super::InterruptHandler,
+        > + 'd,
         config: AdcConfig,
     ) -> Self {
         pll.assert_compatible(config.sample_rate);

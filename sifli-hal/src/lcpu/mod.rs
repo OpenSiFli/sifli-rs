@@ -26,9 +26,9 @@ pub mod bt_rf_cal;
 
 use core::fmt;
 
+use crate::Peripheral;
 use crate::dma::Channel;
 use crate::syscfg;
-use crate::Peripheral;
 use crate::{lpaon, patch, rcc};
 
 #[cfg(feature = "sf32lb52x-lcpu")]
@@ -212,8 +212,10 @@ pub(crate) struct WakeGuard(());
 impl WakeGuard {
     /// Acquire: calls `wake_lcpu()`, incrementing the reference count.
     pub(crate) unsafe fn acquire() -> Self {
-        rcc::wake_lcpu();
-        Self(())
+        unsafe {
+            rcc::wake_lcpu();
+            Self(())
+        }
     }
 }
 

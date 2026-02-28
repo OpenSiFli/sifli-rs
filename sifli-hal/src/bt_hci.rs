@@ -40,7 +40,7 @@ use embedded_io::ReadExactError;
 use crate::dma::Channel;
 use crate::ipc::{self, Error as IpcError, IpcQueue, IpcQueueRx, IpcQueueTx};
 use crate::lcpu::{Lcpu, LcpuConfig, LcpuError};
-use crate::{interrupt, peripherals, Peripheral};
+use crate::{Peripheral, interrupt, peripherals};
 
 #[cfg(any(feature = "defmt", feature = "log"))]
 /// Temporary buffer for logging HCI writes.

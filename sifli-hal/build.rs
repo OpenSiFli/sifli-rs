@@ -13,7 +13,7 @@ use quote::quote;
 
 mod build_serde;
 // Structures imported from build_serde.rs
-use build_serde::{Field, FieldSet, Interrupts, Peripherals, IR};
+use build_serde::{Field, FieldSet, IR, Interrupts, Peripherals};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Retrieve all enabled features

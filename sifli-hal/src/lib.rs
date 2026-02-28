@@ -41,7 +41,7 @@ pub mod usart;
 pub mod usb;
 
 // Reexports
-pub use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+pub use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 #[cfg(feature = "unstable-pac")]
 pub use sifli_pac as pac;
 #[cfg(not(feature = "unstable-pac"))]
@@ -171,7 +171,7 @@ pub(crate) mod _generated {
 }
 
 pub use _generated::interrupt;
-pub use _generated::{peripherals, Peripherals};
+pub use _generated::{Peripherals, peripherals};
 
 /// Performs a busy-wait delay for a specified number of microseconds, using the `cortex-m::asm::delay` function.
 pub fn cortex_m_blocking_delay_us(us: u32) {
@@ -239,7 +239,7 @@ macro_rules! bind_interrupts {
 
         $(
             #[allow(non_snake_case)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             $(#[cfg($cond_irq)])?
             unsafe extern "C" fn $irq() {
                 $(

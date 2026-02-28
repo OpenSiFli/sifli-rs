@@ -1,7 +1,7 @@
 [package]
 name = "sifli-hal"
 version = "0.1.1"
-edition = "2021"
+edition = "2024"
 description = "Hardware Abstraction Layer (HAL) for SiFli MCUs"
 categories = ["hardware-support", "embedded", "no-std"]
 keywords = ["hal", "sf32", "sifli"]

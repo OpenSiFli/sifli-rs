@@ -134,30 +134,32 @@ pub fn lp_rfc_reset_asserted() -> bool {
 /// This function modifies hardware registers and should be called with care.
 /// Ensure no LPSYS peripherals are actively in use during frequency changes.
 pub unsafe fn config_lpsys_hclk_mhz(freq_mhz: u32) -> Result<(), &'static str> {
-    use crate::pmu::dvfs::config_lpsys_dvfs;
+    unsafe {
+        use crate::pmu::dvfs::config_lpsys_dvfs;
 
-    // Validate frequency range
-    if freq_mhz == 0 || freq_mhz > 48 {
-        return Err("LPSYS HCLK frequency must be 1-48 MHz");
+        // Validate frequency range
+        if freq_mhz == 0 || freq_mhz > 48 {
+            return Err("LPSYS HCLK frequency must be 1-48 MHz");
+        }
+
+        let target_freq = Hertz(freq_mhz * 1_000_000);
+        let current_freq = get_lpsys_hclk_freq().unwrap_or(Hertz(48_000_000));
+
+        // Calculate divider (LPSYS sysclk is 48MHz from HRC48 or HXT48)
+        let sysclk_freq = get_lpsys_sysclk_freq().unwrap_or(Hertz(48_000_000));
+        let hdiv = if target_freq >= sysclk_freq {
+            0 // No division
+        } else {
+            (sysclk_freq.0 / target_freq.0) as u8
+        };
+
+        // Use DVFS API to handle voltage transitions
+        config_lpsys_dvfs(current_freq, target_freq, || {
+            set_lpsys_hdiv(hdiv);
+        });
+
+        Ok(())
     }
-
-    let target_freq = Hertz(freq_mhz * 1_000_000);
-    let current_freq = get_lpsys_hclk_freq().unwrap_or(Hertz(48_000_000));
-
-    // Calculate divider (LPSYS sysclk is 48MHz from HRC48 or HXT48)
-    let sysclk_freq = get_lpsys_sysclk_freq().unwrap_or(Hertz(48_000_000));
-    let hdiv = if target_freq >= sysclk_freq {
-        0 // No division
-    } else {
-        (sysclk_freq.0 / target_freq.0) as u8
-    };
-
-    // Use DVFS API to handle voltage transitions
-    config_lpsys_dvfs(current_freq, target_freq, || {
-        set_lpsys_hdiv(hdiv);
-    });
-
-    Ok(())
 }
 
 /// Set LPSYS HCLK divider (HDIV1).

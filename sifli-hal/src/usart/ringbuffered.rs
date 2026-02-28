@@ -5,16 +5,16 @@
 use core::future::poll_fn;
 use core::marker::PhantomData;
 use core::mem;
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 use core::task::Poll;
 
 use embassy_embedded_hal::SetConfig;
 use embassy_hal_internal::PeripheralRef;
 use embedded_io_async::ReadReady;
-use futures_util::future::{select, Either};
+use futures_util::future::{Either, select};
 
 use super::{
-    clear_interrupt_flags, reconfigure, set_baudrate, Config, ConfigError, Error, Instance, UartRx,
+    Config, ConfigError, Error, Instance, UartRx, clear_interrupt_flags, reconfigure, set_baudrate,
 };
 use crate::dma::ReadableRingBuffer;
 use crate::gpio::{AnyPin, SealedPin as _};

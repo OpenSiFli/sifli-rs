@@ -5,7 +5,7 @@
 // Special thanks to the Embassy Project and its contributors for their work!
 #![macro_use]
 
-use embassy_hal_internal::{impl_peripheral, Peripheral};
+use embassy_hal_internal::{Peripheral, impl_peripheral};
 
 mod dma;
 pub use dma::*;
@@ -16,8 +16,8 @@ pub(crate) use util::*;
 pub(crate) mod ringbuffer;
 pub mod word;
 
-pub use crate::_generated::Request;
 pub use crate::_generated::DMAC2_ID_FLAG;
+pub use crate::_generated::Request;
 
 pub(crate) trait SealedChannel {
     fn id(&self) -> u8;
@@ -87,7 +87,7 @@ impl SealedChannel for AnyChannel {
 }
 
 macro_rules! dma_channel_impl {
-    ($channel_peri:ident, $index:expr) => {
+    ($channel_peri:ident, $index:expr_2021) => {
         impl crate::dma::SealedChannel for crate::peripherals::$channel_peri {
             fn id(&self) -> u8 {
                 $index
@@ -95,7 +95,9 @@ macro_rules! dma_channel_impl {
         }
         impl crate::dma::ChannelInterrupt for crate::peripherals::$channel_peri {
             unsafe fn on_irq() {
-                crate::dma::AnyChannel { id: $index }.on_irq();
+                unsafe {
+                    crate::dma::AnyChannel { id: $index }.on_irq();
+                }
             }
         }
 
@@ -121,7 +123,9 @@ use crate::_generated::CHANNEL_COUNT;
 static STATE: [dma::ChannelState; CHANNEL_COUNT] = [dma::ChannelState::NEW; CHANNEL_COUNT];
 
 pub(crate) unsafe fn init(cs: critical_section::CriticalSection) {
-    dma::init(cs);
+    unsafe {
+        dma::init(cs);
+    }
 }
 
 /// "No DMA" placeholder.
