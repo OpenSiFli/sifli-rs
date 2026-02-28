@@ -1,5 +1,3 @@
-use core::hint::spin_loop;
-
 use embassy_hal_internal::{into_ref, PeripheralRef};
 
 use super::nor::{MpiNorFlash, NorExecBackend};
@@ -8,11 +6,70 @@ use super::types::*;
 use super::{Instance, Regs};
 use crate::{rcc, Peripheral};
 
+macro_rules! apply_ahb_command_config {
+    ($reg:expr, $cfg:expr) => {
+        $reg.modify(|w| {
+            w.set_dmode($cfg.data_mode.bits());
+            w.set_dcyc($cfg.dummy_cycles);
+            w.set_absize($cfg.alternate_size.bits());
+            w.set_abmode($cfg.alternate_mode.bits());
+            w.set_adsize($cfg.address_size.bits());
+            w.set_admode($cfg.address_mode.bits());
+            w.set_imode($cfg.instruction_mode.bits());
+        });
+    };
+}
+
+macro_rules! apply_command_config {
+    ($reg:expr, $cfg:expr) => {
+        $reg.modify(|w| {
+            w.set_fmode($cfg.function_mode.is_write());
+            w.set_dmode($cfg.data_mode.bits());
+            w.set_dcyc($cfg.dummy_cycles);
+            w.set_absize($cfg.alternate_size.bits());
+            w.set_abmode($cfg.alternate_mode.bits());
+            w.set_adsize($cfg.address_size.bits());
+            w.set_admode($cfg.address_mode.bits());
+            w.set_imode($cfg.instruction_mode.bits());
+        });
+    };
+}
+
 pub struct Mpi<'d, T: Instance> {
     _inner: PeripheralRef<'d, T>,
 }
 
 impl<'d, T: Instance> Mpi<'d, T> {
+    #[inline(always)]
+    fn validate_dummy_cycles(dummy_cycles: u8) -> Result<(), Error> {
+        if dummy_cycles > MAX_DUMMY_CYCLES {
+            return Err(Error::InvalidConfiguration);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn wait_not_busy(regs: Regs) -> Result<(), Error> {
+        if !ram_wait_not_busy(regs, STATUS_MATCH_TIMEOUT_POLLS) {
+            return Err(Error::Timeout);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn write_slot_command(regs: Regs, slot: CommandSlot, cmd: u8, addr: u32) {
+        match slot {
+            CommandSlot::Cmd1 => {
+                regs.ar1().write(|w| w.set_addr(addr));
+                regs.cmdr1().write(|w| w.set_cmd(cmd));
+            }
+            CommandSlot::Cmd2 => {
+                regs.ar2().write(|w| w.set_addr(addr));
+                regs.cmdr2().write(|w| w.set_cmd(cmd));
+            }
+        }
+    }
+
     pub fn with_config(
         inner: impl Peripheral<P = T> + 'd,
         init: MpiInitConfig,
@@ -60,29 +117,13 @@ impl<'d, T: Instance> Mpi<'d, T> {
 
     fn configure_ahb_read_raw(&mut self, read_cmd: u8, cfg: AhbCommandConfig) {
         let regs = self.regs();
-        regs.hrccr().modify(|w| {
-            w.set_dmode(cfg.data_mode.bits());
-            w.set_dcyc(cfg.dummy_cycles);
-            w.set_absize(cfg.alternate_size.bits());
-            w.set_abmode(cfg.alternate_mode.bits());
-            w.set_adsize(cfg.address_size.bits());
-            w.set_admode(cfg.address_mode.bits());
-            w.set_imode(cfg.instruction_mode.bits());
-        });
+        apply_ahb_command_config!(regs.hrccr(), cfg);
         regs.hcmdr().modify(|w| w.set_rcmd(read_cmd));
     }
 
     fn configure_ahb_write_raw(&mut self, write_cmd: u8, cfg: AhbCommandConfig) {
         let regs = self.regs();
-        regs.hwccr().modify(|w| {
-            w.set_dmode(cfg.data_mode.bits());
-            w.set_dcyc(cfg.dummy_cycles);
-            w.set_absize(cfg.alternate_size.bits());
-            w.set_abmode(cfg.alternate_mode.bits());
-            w.set_adsize(cfg.address_size.bits());
-            w.set_admode(cfg.address_mode.bits());
-            w.set_imode(cfg.instruction_mode.bits());
-        });
+        apply_ahb_command_config!(regs.hwccr(), cfg);
         regs.hcmdr().modify(|w| w.set_wcmd(write_cmd));
     }
 
@@ -95,9 +136,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
         read_cmd: u8,
         cfg: AhbCommandConfig,
     ) -> Result<(), Error> {
-        if cfg.dummy_cycles > 31 {
-            return Err(Error::InvalidConfiguration);
-        }
+        Self::validate_dummy_cycles(cfg.dummy_cycles)?;
         self.configure_ahb_read_raw(read_cmd, cfg);
         Ok(())
     }
@@ -107,9 +146,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
         write_cmd: u8,
         cfg: AhbCommandConfig,
     ) -> Result<(), Error> {
-        if cfg.dummy_cycles > 31 {
-            return Err(Error::InvalidConfiguration);
-        }
+        Self::validate_dummy_cycles(cfg.dummy_cycles)?;
         self.configure_ahb_write_raw(write_cmd, cfg);
         Ok(())
     }
@@ -156,10 +193,11 @@ impl<'d, T: Instance> Mpi<'d, T> {
     }
 
     pub fn clear_fifo(&mut self, mode: FifoClear) {
+        let regs = self.regs();
         match mode {
-            FifoClear::Rx => self.regs().fifocr().modify(|w| w.set_rxclr(true)),
-            FifoClear::Tx => self.regs().fifocr().modify(|w| w.set_txclr(true)),
-            FifoClear::RxTx => self.regs().fifocr().modify(|w| {
+            FifoClear::Rx => regs.fifocr().modify(|w| w.set_rxclr(true)),
+            FifoClear::Tx => regs.fifocr().modify(|w| w.set_txclr(true)),
+            FifoClear::RxTx => regs.fifocr().modify(|w| {
                 w.set_rxclr(true);
                 w.set_txclr(true);
             }),
@@ -171,30 +209,11 @@ impl<'d, T: Instance> Mpi<'d, T> {
         slot: CommandSlot,
         cfg: CommandConfig,
     ) -> Result<(), Error> {
-        if cfg.dummy_cycles > 31 {
-            return Err(Error::InvalidConfiguration);
-        }
+        Self::validate_dummy_cycles(cfg.dummy_cycles)?;
+        let regs = self.regs();
         match slot {
-            CommandSlot::Cmd1 => self.regs().ccr1().modify(|w| {
-                w.set_fmode(cfg.function_mode.is_write());
-                w.set_dmode(cfg.data_mode.bits());
-                w.set_dcyc(cfg.dummy_cycles);
-                w.set_absize(cfg.alternate_size.bits());
-                w.set_abmode(cfg.alternate_mode.bits());
-                w.set_adsize(cfg.address_size.bits());
-                w.set_admode(cfg.address_mode.bits());
-                w.set_imode(cfg.instruction_mode.bits());
-            }),
-            CommandSlot::Cmd2 => self.regs().ccr2().modify(|w| {
-                w.set_fmode(cfg.function_mode.is_write());
-                w.set_dmode(cfg.data_mode.bits());
-                w.set_dcyc(cfg.dummy_cycles);
-                w.set_absize(cfg.alternate_size.bits());
-                w.set_abmode(cfg.alternate_mode.bits());
-                w.set_adsize(cfg.address_size.bits());
-                w.set_admode(cfg.address_mode.bits());
-                w.set_imode(cfg.instruction_mode.bits());
-            }),
+            CommandSlot::Cmd1 => apply_command_config!(regs.ccr1(), cfg),
+            CommandSlot::Cmd2 => apply_command_config!(regs.ccr2(), cfg),
         }
         Ok(())
     }
@@ -203,9 +222,11 @@ impl<'d, T: Instance> Mpi<'d, T> {
         if len == 0 || len > MAX_DLEN_BYTES {
             return Err(Error::InvalidLength);
         }
+        let dlen = (len - 1) as u32;
+        let regs = self.regs();
         match slot {
-            CommandSlot::Cmd1 => self.regs().dlr1().write(|w| w.set_dlen((len - 1) as u32)),
-            CommandSlot::Cmd2 => self.regs().dlr2().write(|w| w.set_dlen((len - 1) as u32)),
+            CommandSlot::Cmd1 => regs.dlr1().write(|w| w.set_dlen(dlen)),
+            CommandSlot::Cmd2 => regs.dlr2().write(|w| w.set_dlen(dlen)),
         }
         Ok(())
     }
@@ -236,21 +257,14 @@ impl<'d, T: Instance> Mpi<'d, T> {
 
     pub fn set_command(&mut self, cmd: u8, addr: u32) -> Result<(), Error> {
         let regs = self.regs();
-        if !ram_wait_not_busy(regs, STATUS_MATCH_TIMEOUT_POLLS) {
-            return Err(Error::Timeout);
-        }
+        Self::wait_not_busy(regs)?;
         regs.scr().write(|w| w.set_tcfc(true));
-        regs.ar1().write(|w| w.set_addr(addr));
-        regs.cmdr1().write(|w| w.set_cmd(cmd));
-        // Wait for transfer complete
-        for _ in 0..STATUS_MATCH_TIMEOUT_POLLS {
-            if regs.sr().read().tcf() {
-                regs.scr().write(|w| w.set_tcfc(true));
-                return Ok(());
-            }
-            spin_loop();
+        Self::write_slot_command(regs, CommandSlot::Cmd1, cmd, addr);
+        if ram_wait_tcf(regs, STATUS_MATCH_TIMEOUT_POLLS) {
+            Ok(())
+        } else {
+            Err(Error::Timeout)
         }
-        Err(Error::Timeout)
     }
 
     pub fn try_set_command_no_wait(
@@ -260,19 +274,8 @@ impl<'d, T: Instance> Mpi<'d, T> {
         addr: u32,
     ) -> Result<(), Error> {
         let regs = self.regs();
-        if !ram_wait_not_busy(regs, STATUS_MATCH_TIMEOUT_POLLS) {
-            return Err(Error::Timeout);
-        }
-        match slot {
-            CommandSlot::Cmd1 => {
-                regs.ar1().write(|w| w.set_addr(addr));
-                regs.cmdr1().write(|w| w.set_cmd(cmd));
-            }
-            CommandSlot::Cmd2 => {
-                regs.ar2().write(|w| w.set_addr(addr));
-                regs.cmdr2().write(|w| w.set_cmd(cmd));
-            }
-        }
+        Self::wait_not_busy(regs)?;
+        Self::write_slot_command(regs, slot, cmd, addr);
         Ok(())
     }
 

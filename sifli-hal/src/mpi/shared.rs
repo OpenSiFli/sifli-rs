@@ -6,6 +6,7 @@ use super::{Regs, SealedInstance};
 
 pub(super) const FIFO_SIZE_BYTES: usize = 64;
 pub(super) const MAX_DLEN_BYTES: usize = 0x000f_ffff + 1;
+pub(super) const MAX_DUMMY_CYCLES: u8 = 31;
 pub(super) const STATUS_MATCH_TIMEOUT_POLLS: u32 = 2_000_000;
 pub(super) const NOR_FLASH_MAX_3B_CAPACITY_BYTES: usize = 16 * 1024 * 1024;
 pub(super) const DEFAULT_DMA_THRESHOLD_BYTES: usize = 256;
@@ -15,6 +16,8 @@ pub(super) const MPI1_CODE_BUS_BASE: usize = CODE_BUS_FLASH_START;
 pub(super) const MPI1_CODE_BUS_END: usize = 0x1200_0000;
 pub(super) const MPI2_CODE_BUS_BASE: usize = MPI1_CODE_BUS_END;
 pub(super) const MPI2_CODE_BUS_END: usize = CODE_BUS_FLASH_END;
+pub(super) const ERASE_BLOCK_32K_BYTES: u32 = 32 * 1024;
+pub(super) const ERASE_BLOCK_64K_BYTES: u32 = 64 * 1024;
 
 pub(super) const NOR_FLASH_WIP_MASK: u32 = 0x01;
 
@@ -29,14 +32,20 @@ pub(super) fn plan_next_erase_step(
 ) -> (u8, u32) {
     let remaining = to - addr;
 
-    if remaining >= 65536 && (addr & (65536 - 1)) == 0 && (65536 % erase_gran) == 0 {
+    if remaining >= ERASE_BLOCK_64K_BYTES
+        && (addr & (ERASE_BLOCK_64K_BYTES - 1)) == 0
+        && (ERASE_BLOCK_64K_BYTES % erase_gran) == 0
+    {
         if let Some(cmd) = block64_opcode {
-            return (cmd, 65536);
+            return (cmd, ERASE_BLOCK_64K_BYTES);
         }
     }
-    if remaining >= 32768 && (addr & (32768 - 1)) == 0 && (32768 % erase_gran) == 0 {
+    if remaining >= ERASE_BLOCK_32K_BYTES
+        && (addr & (ERASE_BLOCK_32K_BYTES - 1)) == 0
+        && (ERASE_BLOCK_32K_BYTES % erase_gran) == 0
+    {
         if let Some(cmd) = block32_opcode {
-            return (cmd, 32768);
+            return (cmd, ERASE_BLOCK_32K_BYTES);
         }
     }
 
@@ -167,6 +176,13 @@ fn ram_clear_status_flags(regs: Regs) {
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
+fn ram_issue_cmd1(regs: Regs, addr: u32, cmd: u8) {
+    regs.ar1().write(|w| w.set_addr(addr));
+    regs.cmdr1().write(|w| w.set_cmd(cmd));
+}
+
+#[inline(always)]
+#[link_section = ".data.ramfunc"]
 fn ram_configure_wip_status_match(regs: Regs) {
     regs.smr().write(|w| w.set_status(0));
     regs.smkr().write(|w| w.set_mask(NOR_FLASH_WIP_MASK));
@@ -234,6 +250,31 @@ pub(super) fn ram_end_cmd2_status_poll(regs: Regs) {
     ram_clear_status_flags(regs);
 }
 
+#[inline(always)]
+#[link_section = ".data.ramfunc"]
+fn ram_run_cmd2_status_poll(
+    regs: Regs,
+    read_status_cmd: u8,
+    cmd_addr: u32,
+    cmd: u8,
+    max_polls: u32,
+) -> bool {
+    ram_configure_cmd2_status_poll(regs, read_status_cmd);
+    ram_begin_cmd2_status_poll(regs);
+    ram_issue_cmd1(regs, cmd_addr, cmd);
+    let ok = ram_wait_smf(regs, max_polls);
+    ram_end_cmd2_status_poll(regs);
+    ok
+}
+
+#[inline(always)]
+#[link_section = ".data.ramfunc"]
+fn ram_pack_le_word(chunk: &[u8]) -> u32 {
+    let mut word = [0u8; 4];
+    word[..chunk.len()].copy_from_slice(chunk);
+    u32::from_le_bytes(word)
+}
+
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
 fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, ()> {
@@ -242,8 +283,7 @@ fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, 
     regs.dlr1().write(|w| w.set_dlen(dlen));
 
     regs.scr().write(|w| w.set_tcfc(true));
-    regs.ar1().write(|w| w.set_addr(0));
-    regs.cmdr1().write(|w| w.set_cmd(cmd));
+    ram_issue_cmd1(regs, 0, cmd);
 
     if !ram_wait_tcf(regs, max_polls) {
         return Err(());
@@ -257,8 +297,7 @@ fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, 
 pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool {
     ram_configure_simple_cmd(regs);
     regs.scr().write(|w| w.set_tcfc(true));
-    regs.ar1().write(|w| w.set_addr(0));
-    regs.cmdr1().write(|w| w.set_cmd(cmd));
+    ram_issue_cmd1(regs, 0, cmd);
     ram_wait_tcf(regs, max_polls)
 }
 
@@ -307,33 +346,14 @@ pub(super) fn ram_program_chunk(
     let mut idx = 0;
     while idx < data.len() {
         let take = min(4, data.len() - idx);
-        let mut word = data[idx] as u32;
-        if take > 1 {
-            word |= (data[idx + 1] as u32) << 8;
-        }
-        if take > 2 {
-            word |= (data[idx + 2] as u32) << 16;
-        }
-        if take > 3 {
-            word |= (data[idx + 3] as u32) << 24;
-        }
-        regs.dr().write(|w| w.set_data(word));
+        regs.dr()
+            .write(|w| w.set_data(ram_pack_le_word(&data[idx..idx + take])));
         idx += take;
     }
 
     ram_configure_write_with_addr(regs, addr_size);
     regs.dlr1().write(|w| w.set_dlen((data.len() - 1) as u32));
-
-    ram_configure_cmd2_status_poll(regs, read_status_cmd);
-    ram_begin_cmd2_status_poll(regs);
-
-    regs.ar1().write(|w| w.set_addr(addr));
-    regs.cmdr1().write(|w| w.set_cmd(program_cmd));
-
-    let ok = ram_wait_smf(regs, max_polls);
-    ram_end_cmd2_status_poll(regs);
-
-    ok
+    ram_run_cmd2_status_poll(regs, read_status_cmd, addr, program_cmd, max_polls)
 }
 
 #[inline(never)]
@@ -352,16 +372,7 @@ pub(super) fn ram_erase_sector(
     }
 
     ram_configure_addr_only(regs, addr_size);
-    ram_configure_cmd2_status_poll(regs, read_status_cmd);
-    ram_begin_cmd2_status_poll(regs);
-
-    regs.ar1().write(|w| w.set_addr(addr));
-    regs.cmdr1().write(|w| w.set_cmd(erase_cmd));
-
-    let ok = ram_wait_smf(regs, max_polls);
-    ram_end_cmd2_status_poll(regs);
-
-    ok
+    ram_run_cmd2_status_poll(regs, read_status_cmd, addr, erase_cmd, max_polls)
 }
 
 #[inline(never)]
@@ -382,39 +393,30 @@ pub(super) fn ram_erase_chip(
     }
 
     ram_configure_simple_cmd(regs);
-    ram_configure_cmd2_status_poll(regs, read_status_cmd);
-    ram_begin_cmd2_status_poll(regs);
-
-    regs.ar1().write(|w| w.set_addr(0));
-    regs.cmdr1().write(|w| w.set_cmd(chip_erase_cmd));
-
-    let ok = ram_wait_smf(regs, max_polls);
-    ram_end_cmd2_status_poll(regs);
-
-    ok
+    ram_run_cmd2_status_poll(regs, read_status_cmd, 0, chip_erase_cmd, max_polls)
 }
 
 macro_rules! define_ram_irq_wrappers {
-        (
-            $(
-                $(#[$attr:meta])*
-                fn $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty
-                    = $inner:ident($($call:expr),* $(,)?);
-            )+
-        ) => {
-            $(
-                $(#[$attr])*
-                #[inline(never)]
-                #[link_section = ".data.ramfunc"]
-                pub(super) fn $name($($arg: $ty),*) -> $ret {
-                    let primask = ram_irq_save_disable();
-                    let result = $inner($($call),*);
-                    ram_irq_restore(primask);
-                    result
-                }
-            )+
-        };
-    }
+    (
+        $(
+            $(#[$attr:meta])*
+            fn $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty
+                = $inner:ident($($call:expr),* $(,)?);
+        )+
+    ) => {
+        $(
+            $(#[$attr])*
+            #[inline(never)]
+            #[link_section = ".data.ramfunc"]
+            pub(super) fn $name($($arg: $ty),*) -> $ret {
+                let primask = ram_irq_save_disable();
+                let result = $inner($($call),*);
+                ram_irq_restore(primask);
+                result
+            }
+        )+
+    };
+}
 
 define_ram_irq_wrappers! {
     fn ram_wrapper_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()>
@@ -487,8 +489,7 @@ pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u3
 
     ram_clear_status_flags(regs);
 
-    regs.ar1().write(|w| w.set_addr(0));
-    regs.cmdr1().write(|w| w.set_cmd(read_status_cmd));
+    ram_issue_cmd1(regs, 0, read_status_cmd);
 
     let ok = ram_wait_smf(regs, max_polls);
 

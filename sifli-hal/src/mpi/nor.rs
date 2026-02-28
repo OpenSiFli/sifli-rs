@@ -15,19 +15,11 @@ pub(super) enum NorExecBackend {
 }
 
 impl NorExecBackend {
-    const fn direct() -> Self {
-        Self::Direct
-    }
-
-    const fn xip_safe() -> Self {
-        Self::XipSafe
-    }
-
     pub(super) const fn from_running_from_xip(running_from_xip: bool) -> Self {
         if running_from_xip {
-            Self::xip_safe()
+            Self::XipSafe
         } else {
-            Self::direct()
+            Self::Direct
         }
     }
 
@@ -163,6 +155,26 @@ pub struct MpiNorFlash<'d, T: Instance, const WRITE_GRAN: usize = 1, const ERASE
 impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
     MpiNorFlash<'d, T, WRITE_GRAN, ERASE_GRAN>
 {
+    #[inline(always)]
+    fn map_timeout<T>(result: Result<T, ()>) -> Result<T, Error> {
+        result.map_err(|_| Error::Timeout)
+    }
+
+    #[inline(always)]
+    fn require_command(cmd: Option<u8>) -> Result<u8, Error> {
+        cmd.ok_or(Error::InvalidConfiguration)
+    }
+
+    #[inline(always)]
+    fn using_4byte_address(&self) -> bool {
+        self.config.address_size == AddressSize::FourBytes
+    }
+
+    #[inline(always)]
+    fn max_ready_polls(&self) -> u32 {
+        self.config.max_ready_polls
+    }
+
     /// Create a blocking NOR flash instance with common defaults.
     pub fn new_blocking(
         inner: impl Peripheral<P = T> + 'd,
@@ -228,7 +240,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
 
     #[inline(always)]
     fn selected_cmd(&self, cmd_3byte: u8, cmd_4byte: Option<u8>) -> u8 {
-        if self.config.address_size == AddressSize::FourBytes {
+        if self.using_4byte_address() {
             cmd_4byte.unwrap_or(cmd_3byte)
         } else {
             cmd_3byte
@@ -237,7 +249,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
 
     #[inline(always)]
     fn selected_optional_cmd(&self, cmd_3byte: Option<u8>, cmd_4byte: Option<u8>) -> Option<u8> {
-        if self.config.address_size == AddressSize::FourBytes {
+        if self.using_4byte_address() {
             cmd_4byte.or(cmd_3byte)
         } else {
             cmd_3byte
@@ -323,7 +335,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
     fn issue_simple_command(&mut self, cmd: u8) -> Result<(), Error> {
         let ok = self
             .exec
-            .issue_simple_cmd(self.regs(), cmd, self.config.max_ready_polls);
+            .issue_simple_cmd(self.regs(), cmd, self.max_ready_polls());
         Self::timeout_if_false(ok)
     }
 
@@ -335,7 +347,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
             self.read_status_cmd(),
             addr,
             self.addr_size_bits(),
-            self.config.max_ready_polls,
+            self.max_ready_polls(),
         );
         Self::timeout_if_false(ok)
     }
@@ -346,7 +358,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
             self.write_enable_cmd(),
             erase_cmd,
             self.read_status_cmd(),
-            self.config.max_ready_polls,
+            self.max_ready_polls(),
         );
         Self::timeout_if_false(ok)
     }
@@ -362,7 +374,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         if out.is_empty() {
             return Ok(());
         }
-        if dummy_cycles > 31 {
+        if dummy_cycles > MAX_DUMMY_CYCLES {
             return Err(Error::InvalidConfiguration);
         }
 
@@ -407,32 +419,26 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
     }
 
     pub fn read_status(&mut self) -> Result<u8, Error> {
-        self.exec
-            .read_status(
-                self.regs(),
-                self.read_status_cmd(),
-                self.config.max_ready_polls,
-            )
-            .map_err(|_| Error::Timeout)
+        Self::map_timeout(self.exec.read_status(
+            self.regs(),
+            self.read_status_cmd(),
+            self.max_ready_polls(),
+        ))
     }
 
     pub fn wait_ready(&mut self) -> Result<(), Error> {
-        let ok = self.exec.wait_ready(
-            self.regs(),
-            self.read_status_cmd(),
-            self.config.max_ready_polls,
-        );
+        let ok = self
+            .exec
+            .wait_ready(self.regs(), self.read_status_cmd(), self.max_ready_polls());
         Self::timeout_if_false(ok)
     }
 
     pub fn read_jedec_id(&mut self) -> Result<u32, Error> {
-        self.exec
-            .read_jedec_id(
-                self.regs(),
-                self.read_jedec_id_cmd(),
-                self.config.max_ready_polls,
-            )
-            .map_err(|_| Error::Timeout)
+        Self::map_timeout(self.exec.read_jedec_id(
+            self.regs(),
+            self.read_jedec_id_cmd(),
+            self.max_ready_polls(),
+        ))
     }
 
     fn program_chunk(&mut self, addr: u32, data: &[u8]) -> Result<(), Error> {
@@ -444,7 +450,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
             addr,
             self.addr_size_bits(),
             data,
-            self.config.max_ready_polls,
+            self.max_ready_polls(),
         );
         Self::timeout_if_false(ok)
     }
@@ -500,10 +506,7 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
             // SAFETY: `base + i` is 4-byte aligned and within bounds.
             let word = unsafe { core::ptr::read_volatile((base + i) as *const u32) };
             let wb = word.to_le_bytes();
-            bytes[i] = wb[0];
-            bytes[i + 1] = wb[1];
-            bytes[i + 2] = wb[2];
-            bytes[i + 3] = wb[3];
+            bytes[i..i + 4].copy_from_slice(&wb);
             i += 4;
         }
 
@@ -584,20 +587,12 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
 
     pub fn enter_deep_power_down(&mut self) -> Result<(), Error> {
         self.wait_ready()?;
-        let cmd = self
-            .config
-            .commands
-            .deep_power_down
-            .ok_or(Error::InvalidConfiguration)?;
+        let cmd = Self::require_command(self.config.commands.deep_power_down)?;
         self.issue_simple_command(cmd)
     }
 
     pub fn release_deep_power_down(&mut self) -> Result<(), Error> {
-        let cmd = self
-            .config
-            .commands
-            .release_power_down
-            .ok_or(Error::InvalidConfiguration)?;
+        let cmd = Self::require_command(self.config.commands.release_power_down)?;
         self.issue_simple_command(cmd)
     }
 
@@ -605,31 +600,19 @@ impl<'d, T: Instance, const WRITE_GRAN: usize, const ERASE_GRAN: usize>
         if let Some(cmd) = self.config.commands.reset_enable {
             self.issue_simple_command(cmd)?;
         }
-        let reset_cmd = self
-            .config
-            .commands
-            .reset
-            .ok_or(Error::InvalidConfiguration)?;
+        let reset_cmd = Self::require_command(self.config.commands.reset)?;
         self.issue_simple_command(reset_cmd)?;
         self.wait_ready()
     }
 
     pub fn read_sfdp(&mut self, offset: u32, out: &mut [u8]) -> Result<(), Error> {
-        let cmd = self
-            .config
-            .commands
-            .read_sfdp
-            .ok_or(Error::InvalidConfiguration)?;
+        let cmd = Self::require_command(self.config.commands.read_sfdp)?;
         // SFDP command uses 3-byte address + 8 dummy cycles.
         self.read_command_stream(cmd, Some(offset), AddressSize::ThreeBytes, 8, out)
     }
 
     pub fn read_unique_id(&mut self, out: &mut [u8]) -> Result<(), Error> {
-        let cmd = self
-            .config
-            .commands
-            .read_unique_id
-            .ok_or(Error::InvalidConfiguration)?;
+        let cmd = Self::require_command(self.config.commands.read_unique_id)?;
         // Many devices encode this as 4-byte zero address after command.
         self.read_command_stream(cmd, Some(0), AddressSize::FourBytes, 0, out)
     }
