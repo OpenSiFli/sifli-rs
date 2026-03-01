@@ -10,6 +10,7 @@ use embassy_sync::waitqueue::AtomicWaker;
 use hpsys::HpsysPin;
 
 use crate::interrupt::InterruptExt;
+#[cfg(feature = "rt")]
 use crate::utils::BitIter64;
 use crate::{interrupt, peripherals, Peripheral};
 

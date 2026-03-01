@@ -1,4 +1,9 @@
+use core::marker::PhantomData;
+use core::sync::atomic::{compiler_fence, Ordering};
+
+use crate::interrupt;
 use crate::Peripheral;
+use embassy_sync::waitqueue::AtomicWaker;
 
 pub(super) type Regs = crate::pac::mpi::Mpi;
 
@@ -8,23 +13,65 @@ pub(crate) trait SealedInstance:
     fn regs() -> Regs;
     fn code_bus_base() -> usize;
     fn code_bus_end() -> usize;
+    fn state() -> &'static State;
 }
 
 #[allow(private_bounds)]
-pub trait Instance: Peripheral<P = Self> + SealedInstance + 'static + Send {}
+pub trait Instance: Peripheral<P = Self> + SealedInstance + 'static + Send {
+    /// Interrupt for this MPI instance.
+    type Interrupt: interrupt::typelevel::Interrupt;
+}
 
+dma_trait!(Dma, Instance);
+
+pub(crate) struct State {
+    waker: AtomicWaker,
+}
+
+impl State {
+    const NEW: Self = Self {
+        waker: AtomicWaker::new(),
+    };
+
+    #[inline(always)]
+    pub(crate) fn wake(&self) {
+        self.waker.wake();
+    }
+}
+
+/// Typed interrupt handler for MPI async state.
+pub struct InterruptHandler<T: Instance> {
+    _phantom: PhantomData<T>,
+}
+
+impl<T: Instance> interrupt::typelevel::Handler<T::Interrupt> for InterruptHandler<T> {
+    unsafe fn on_interrupt() {
+        compiler_fence(Ordering::SeqCst);
+        T::state().wake();
+    }
+}
+
+#[cfg_attr(
+    not(feature = "unstable-mpi-controller"),
+    allow(dead_code, unused_imports)
+)]
+mod controller;
 mod shared;
+mod xip;
 
+#[cfg_attr(not(feature = "unstable-mpi-controller"), allow(dead_code))]
 mod types {
     use embedded_storage::nor_flash::{NorFlashError, NorFlashErrorKind};
-
-    use super::shared::DEFAULT_DMA_THRESHOLD_BYTES;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub enum Error {
         Timeout,
         InvalidConfiguration,
+        UnsupportedProfileFeature,
+        UnknownJedecId,
+        CommandForbiddenInXip,
+        AsyncForbiddenInXip,
         UnsafeResetInXip,
         CapacityExceedsWindow,
         RequiresPreconfigured4ByteMode,
@@ -41,6 +88,10 @@ mod types {
                 Self::OutOfBounds => NorFlashErrorKind::OutOfBounds,
                 Self::Timeout
                 | Self::InvalidConfiguration
+                | Self::UnsupportedProfileFeature
+                | Self::UnknownJedecId
+                | Self::CommandForbiddenInXip
+                | Self::AsyncForbiddenInXip
                 | Self::UnsafeResetInXip
                 | Self::CapacityExceedsWindow
                 | Self::RequiresPreconfigured4ByteMode
@@ -209,115 +260,21 @@ mod types {
             }
         }
     }
-
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct NorFlashCommandSet {
-        pub write_enable: u8,
-        pub enter_4byte_address: Option<u8>,
-        pub read_status: u8,
-        pub ahb_read: u8,
-        pub ahb_read_4byte: Option<u8>,
-        pub page_program: u8,
-        pub page_program_4byte: Option<u8>,
-        pub sector_erase: u8,
-        pub sector_erase_4byte: Option<u8>,
-        pub block_erase_32k: Option<u8>,
-        pub block_erase_32k_4byte: Option<u8>,
-        pub block_erase_64k: Option<u8>,
-        pub block_erase_64k_4byte: Option<u8>,
-        pub chip_erase: Option<u8>,
-        pub read_jedec_id: u8,
-        pub deep_power_down: Option<u8>,
-        pub release_power_down: Option<u8>,
-        pub reset_enable: Option<u8>,
-        pub reset: Option<u8>,
-        pub read_sfdp: Option<u8>,
-        pub read_unique_id: Option<u8>,
-    }
-
-    impl NorFlashCommandSet {
-        pub const fn common_spi_nor() -> Self {
-            Self {
-                write_enable: 0x06,
-                enter_4byte_address: Some(0xB7),
-                read_status: 0x05,
-                ahb_read: 0x03,
-                ahb_read_4byte: Some(0x13),
-                page_program: 0x02,
-                page_program_4byte: Some(0x12),
-                sector_erase: 0x20,
-                sector_erase_4byte: Some(0x21),
-                block_erase_32k: Some(0x52),
-                block_erase_32k_4byte: None,
-                block_erase_64k: Some(0xD8),
-                block_erase_64k_4byte: Some(0xDC),
-                chip_erase: Some(0xC7),
-                read_jedec_id: 0x9f,
-                deep_power_down: Some(0xB9),
-                release_power_down: Some(0xAB),
-                reset_enable: Some(0x66),
-                reset: Some(0x99),
-                read_sfdp: Some(0x5A),
-                read_unique_id: Some(0x4B),
-            }
-        }
-    }
-
-    impl Default for NorFlashCommandSet {
-        fn default() -> Self {
-            Self::common_spi_nor()
-        }
-    }
-
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct NorFlashConfig {
-        pub capacity: usize,
-        pub page_size: usize,
-        pub address_size: AddressSize,
-        pub max_ready_polls: u32,
-        pub allow_preconfigured_4byte_in_xip: bool,
-        pub dma_threshold_bytes: usize,
-        pub commands: NorFlashCommandSet,
-    }
-
-    impl NorFlashConfig {
-        pub const fn new(capacity: usize) -> Self {
-            Self {
-                capacity,
-                page_size: 256,
-                address_size: AddressSize::ThreeBytes,
-                max_ready_polls: 2_000_000,
-                allow_preconfigured_4byte_in_xip: false,
-                dma_threshold_bytes: DEFAULT_DMA_THRESHOLD_BYTES,
-                commands: NorFlashCommandSet::common_spi_nor(),
-            }
-        }
-    }
-
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct NorFlashPartition {
-        pub offset: u32,
-        pub size: u32,
-    }
-
-    impl NorFlashPartition {
-        pub const fn new(offset: u32, size: u32) -> Self {
-            Self { offset, size }
-        }
-    }
 }
 
-mod driver;
-mod nor;
+pub mod nor;
 
 mod instance_impl {
     use super::shared::{
         MPI1_CODE_BUS_BASE, MPI1_CODE_BUS_END, MPI2_CODE_BUS_BASE, MPI2_CODE_BUS_END,
     };
-    use super::{Instance, Regs, SealedInstance};
+    use super::{Instance, Regs, SealedInstance, State};
+
+    static MPI1_STATE: State = State::NEW;
+    static MPI2_STATE: State = State::NEW;
 
     macro_rules! impl_instance {
-        ($periph:ty, $regs:expr, $base:expr, $end:expr) => {
+        ($periph:ty, $irq:ident, $regs:expr, $base:expr, $end:expr, $state:expr) => {
             impl SealedInstance for $periph {
                 #[inline(always)]
                 fn regs() -> Regs {
@@ -333,30 +290,46 @@ mod instance_impl {
                 fn code_bus_end() -> usize {
                     $end
                 }
+
+                #[inline(always)]
+                fn state() -> &'static State {
+                    $state
+                }
             }
 
-            impl Instance for $periph {}
+            impl Instance for $periph {
+                type Interrupt = crate::interrupt::typelevel::$irq;
+            }
         };
     }
 
     impl_instance!(
         crate::peripherals::MPI1,
+        MPI1,
         crate::pac::MPI1,
         MPI1_CODE_BUS_BASE,
-        MPI1_CODE_BUS_END
+        MPI1_CODE_BUS_END,
+        &MPI1_STATE
     );
     impl_instance!(
         crate::peripherals::MPI2,
+        MPI2,
         crate::pac::MPI2,
         MPI2_CODE_BUS_BASE,
-        MPI2_CODE_BUS_END
+        MPI2_CODE_BUS_END,
+        &MPI2_STATE
     );
 }
 
-pub use driver::Mpi;
-pub use nor::{MpiNorFlash, MpiNorPartition};
-pub use nor::{MpiNorFlash as Flash, MpiNorPartition as FlashPartition};
-pub use types::{
-    AddressSize, AhbCommandConfig, CommandConfig, CommandSlot, Error, FifoClear, FunctionMode,
-    MpiInitConfig, NorFlashCommandSet, NorFlashConfig, NorFlashPartition, PhaseMode,
+pub use nor::{
+    AddressingPolicy, AhbReadPolicy, AsyncNorFlash, BlockingNorFlash, BuiltInProfile,
+    DetectedNorInfo, DtrPolicy, JedecId, NorConfig, NorFamily, NorFlash, NorProfile, ProfileSource,
+    QePolicy, ReadMode,
+};
+pub use types::{AddressSize, Error};
+
+#[cfg(feature = "unstable-mpi-controller")]
+pub use controller::{
+    AhbCommandConfig, CommandConfig, CommandSlot, FifoClear, FunctionMode, Mpi, MpiInitConfig,
+    PhaseMode, Transfer, TransferData,
 };
