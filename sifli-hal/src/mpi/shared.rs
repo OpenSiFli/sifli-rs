@@ -167,6 +167,26 @@ fn ram_configure_ccr1(regs: Regs, fmode: bool, dmode: u8, address_mode: u8, addr
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
+fn ram_configure_cmd1_read_stream(
+    regs: Regs,
+    address_mode: u8,
+    address_size: u8,
+    dummy_cycles: u8,
+) {
+    regs.ccr1().modify(|w| {
+        w.set_fmode(false);
+        w.set_dmode(1);
+        w.set_dcyc(dummy_cycles);
+        w.set_absize(0);
+        w.set_abmode(0);
+        w.set_adsize(address_size);
+        w.set_admode(address_mode);
+        w.set_imode(1);
+    });
+}
+
+#[inline(always)]
+#[link_section = ".data.ramfunc"]
 fn ram_clear_status_flags(regs: Regs) {
     regs.scr().write(|w| {
         w.set_smfc(true);
@@ -316,8 +336,66 @@ pub(super) fn ram_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()> {
+    if !ram_wait_not_busy(regs, max_polls) {
+        return Err(());
+    }
+
     // 1 byte.
     ram_read_data(regs, cmd, 0, max_polls).map(|data| (data & 0xff) as u8)
+}
+
+#[inline(never)]
+#[link_section = ".data.ramfunc"]
+pub(super) fn ram_read_command_stream(
+    regs: Regs,
+    cmd: u8,
+    mut addr: Option<u32>,
+    addr_size: u8,
+    dummy_cycles: u8,
+    out: &mut [u8],
+    max_polls: u32,
+) -> bool {
+    if out.is_empty() {
+        return true;
+    }
+
+    let address_mode = if addr.is_some() { 1 } else { 0 };
+    let address_size = if addr.is_some() { addr_size } else { 0 };
+    let mut done = 0usize;
+
+    while done < out.len() {
+        let step = min(FIFO_SIZE_BYTES, out.len() - done);
+
+        if !ram_wait_not_busy(regs, max_polls) {
+            return false;
+        }
+
+        regs.fifocr().modify(|w| w.set_rxclr(true));
+        ram_configure_cmd1_read_stream(regs, address_mode, address_size, dummy_cycles);
+        regs.dlr1().write(|w| w.set_dlen((step - 1) as u32));
+
+        regs.scr().write(|w| w.set_tcfc(true));
+        ram_issue_cmd1(regs, addr.unwrap_or(0), cmd);
+
+        if !ram_wait_tcf(regs, max_polls) {
+            return false;
+        }
+
+        let mut idx = 0usize;
+        while idx < step {
+            let word = regs.dr().read().data().to_le_bytes();
+            let take = min(4, step - idx);
+            out[done + idx..done + idx + take].copy_from_slice(&word[..take]);
+            idx += take;
+        }
+
+        done += step;
+        if let Some(a) = &mut addr {
+            *a = a.saturating_add(step as u32);
+        }
+    }
+
+    true
 }
 
 #[inline(never)]
@@ -419,6 +497,15 @@ macro_rules! define_ram_irq_wrappers {
 }
 
 define_ram_irq_wrappers! {
+    fn ram_wrapper_read_command_stream(
+        regs: Regs,
+        cmd: u8,
+        addr: Option<u32>,
+        addr_size: u8,
+        dummy_cycles: u8,
+        out: &mut [u8],
+        max_polls: u32,
+    ) -> bool = ram_read_command_stream(regs, cmd, addr, addr_size, dummy_cycles, out, max_polls);
     fn ram_wrapper_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()>
         = ram_read_jedec_id(regs, cmd, max_polls);
     fn ram_wrapper_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()>

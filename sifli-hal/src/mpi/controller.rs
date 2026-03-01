@@ -1,8 +1,20 @@
+//! Low-level MPI controller backend.
+//!
+//! Public re-exports are gated in [`crate::mpi`] behind
+//! `unstable-mpi-controller`.
+
+use core::cmp::min;
+
 use embassy_hal_internal::{into_ref, PeripheralRef};
 
-use super::nor::{MpiNorFlash, NorExecBackend};
-use super::shared::*;
-use super::types::*;
+use super::shared::{
+    FIFO_SIZE_BYTES, MAX_DLEN_BYTES, MAX_DUMMY_CYCLES, STATUS_MATCH_TIMEOUT_POLLS,
+};
+pub use super::types::{
+    AddressSize, AhbCommandConfig, CommandConfig, CommandSlot, Error, FifoClear, FunctionMode,
+    MpiInitConfig, PhaseMode,
+};
+use super::xip;
 use super::{Instance, Regs};
 use crate::{rcc, Peripheral};
 
@@ -16,7 +28,7 @@ macro_rules! apply_ahb_command_config {
             w.set_adsize($cfg.address_size.bits());
             w.set_admode($cfg.address_mode.bits());
             w.set_imode($cfg.instruction_mode.bits());
-        });
+        })
     };
 }
 
@@ -31,7 +43,7 @@ macro_rules! apply_command_config {
             w.set_adsize($cfg.address_size.bits());
             w.set_admode($cfg.address_mode.bits());
             w.set_imode($cfg.instruction_mode.bits());
-        });
+        })
     };
 }
 
@@ -50,7 +62,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
 
     #[inline(always)]
     fn wait_not_busy(regs: Regs) -> Result<(), Error> {
-        if !ram_wait_not_busy(regs, STATUS_MATCH_TIMEOUT_POLLS) {
+        if !xip::wait_not_busy(regs, STATUS_MATCH_TIMEOUT_POLLS) {
             return Err(Error::Timeout);
         }
         Ok(())
@@ -74,7 +86,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
         inner: impl Peripheral<P = T> + 'd,
         init: MpiInitConfig,
     ) -> Result<Self, Error> {
-        if init.reset && !init.allow_reset_from_xip && running_from_instance_code_bus_flash::<T>() {
+        if init.reset && !init.allow_reset_from_xip && xip::running_from_same_instance_xip::<T>() {
             return Err(Error::UnsafeResetInXip);
         }
 
@@ -260,7 +272,7 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Self::wait_not_busy(regs)?;
         regs.scr().write(|w| w.set_tcfc(true));
         Self::write_slot_command(regs, CommandSlot::Cmd1, cmd, addr);
-        if ram_wait_tcf(regs, STATUS_MATCH_TIMEOUT_POLLS) {
+        if xip::wait_transfer_complete(regs, STATUS_MATCH_TIMEOUT_POLLS) {
             Ok(())
         } else {
             Err(Error::Timeout)
@@ -278,98 +290,202 @@ impl<'d, T: Instance> Mpi<'d, T> {
         Self::write_slot_command(regs, slot, cmd, addr);
         Ok(())
     }
+}
+pub enum TransferData<'a> {
+    None,
+    Read(&'a mut [u8]),
+    Write(&'a [u8]),
+}
 
-    /// Convert to NOR flash with common defaults.
-    ///
-    /// This is the simplest entry point for standard SPI NOR parts.
-    pub fn into_nor_flash_default<const WRITE_GRAN: usize, const ERASE_GRAN: usize>(
-        self,
-        capacity: usize,
-    ) -> Result<MpiNorFlash<'d, T, WRITE_GRAN, ERASE_GRAN>, Error> {
-        self.into_nor_flash(NorFlashConfig::new(capacity))
+pub struct Transfer<'a> {
+    pub slot: CommandSlot,
+    pub command: u8,
+    pub address: u32,
+    pub config: CommandConfig,
+    pub auto_increment_address: bool,
+    pub data: TransferData<'a>,
+}
+
+impl<'a> Transfer<'a> {
+    pub const fn command_only(
+        slot: CommandSlot,
+        command: u8,
+        address: u32,
+        config: CommandConfig,
+    ) -> Self {
+        Self {
+            slot,
+            command,
+            address,
+            config,
+            auto_increment_address: false,
+            data: TransferData::None,
+        }
     }
 
-    fn validate_nor_flash_config<const WRITE_GRAN: usize, const ERASE_GRAN: usize>(
-        config: &NorFlashConfig,
-        window_size: usize,
+    pub fn read(
+        slot: CommandSlot,
+        command: u8,
+        address: u32,
+        config: CommandConfig,
+        out: &'a mut [u8],
+    ) -> Self {
+        Self {
+            slot,
+            command,
+            address,
+            config,
+            auto_increment_address: true,
+            data: TransferData::Read(out),
+        }
+    }
+
+    pub const fn write(
+        slot: CommandSlot,
+        command: u8,
+        address: u32,
+        config: CommandConfig,
+        data: &'a [u8],
+    ) -> Self {
+        Self {
+            slot,
+            command,
+            address,
+            config,
+            auto_increment_address: true,
+            data: TransferData::Write(data),
+        }
+    }
+
+    pub fn data_len(&self) -> usize {
+        match &self.data {
+            TransferData::None => 0,
+            TransferData::Read(out) => out.len(),
+            TransferData::Write(data) => data.len(),
+        }
+    }
+}
+
+fn pack_le_word(data: &[u8]) -> u32 {
+    let mut word = [0u8; 4];
+    word[..data.len()].copy_from_slice(data);
+    u32::from_le_bytes(word)
+}
+
+impl<'d, T: Instance> Mpi<'d, T> {
+    pub fn transfer(&mut self, transfer: &mut Transfer<'_>) -> Result<(), Error> {
+        let slot = transfer.slot;
+        let command = transfer.command;
+        let address = transfer.address;
+        let config = transfer.config;
+        let auto_increment_address = transfer.auto_increment_address;
+
+        match &mut transfer.data {
+            TransferData::None => self.transfer_command_only(slot, command, address, config),
+            TransferData::Read(out) => {
+                self.transfer_read(slot, command, address, config, auto_increment_address, out)
+            }
+            TransferData::Write(data) => {
+                self.transfer_write(slot, command, address, config, auto_increment_address, data)
+            }
+        }
+    }
+
+    fn transfer_command_only(
+        &mut self,
+        slot: CommandSlot,
+        command: u8,
+        address: u32,
+        config: CommandConfig,
     ) -> Result<(), Error> {
-        if config.capacity > window_size {
-            return Err(Error::CapacityExceedsWindow);
+        if slot != CommandSlot::Cmd1 {
+            return Err(Error::InvalidConfiguration);
         }
+        self.configure_command_for(slot, config)?;
+        self.set_command(command, address)
+    }
 
-        if WRITE_GRAN == 0
-            || ERASE_GRAN == 0
-            || WRITE_GRAN > FIFO_SIZE_BYTES
-            || config.capacity == 0
-            || config.page_size == 0
-            || config.page_size < WRITE_GRAN
-            || !config.page_size.is_multiple_of(WRITE_GRAN)
-            || config.max_ready_polls == 0
-            || config.dma_threshold_bytes == 0
-        {
+    fn transfer_read(
+        &mut self,
+        slot: CommandSlot,
+        command: u8,
+        base_address: u32,
+        config: CommandConfig,
+        auto_increment_address: bool,
+        out: &mut [u8],
+    ) -> Result<(), Error> {
+        if out.is_empty() {
+            return Ok(());
+        }
+        if slot != CommandSlot::Cmd1 {
             return Err(Error::InvalidConfiguration);
         }
 
-        let needs_4byte_address = config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES;
-        if needs_4byte_address
-            && (config.address_size != AddressSize::FourBytes
-                || config.commands.ahb_read_4byte.is_none())
-        {
-            return Err(Error::InvalidConfiguration);
-        }
+        let mut done = 0usize;
+        while done < out.len() {
+            let step = min(FIFO_SIZE_BYTES, out.len() - done);
+            let address = if auto_increment_address {
+                base_address.saturating_add(done as u32)
+            } else {
+                base_address
+            };
 
+            self.clear_fifo(FifoClear::Rx);
+            self.configure_command_for(slot, config)?;
+            self.set_data_len_for(slot, step)?;
+            self.set_command(command, address)?;
+
+            let mut idx = 0usize;
+            while idx < step {
+                let word = self.read_word().to_le_bytes();
+                let take = min(4, step - idx);
+                out[done + idx..done + idx + take].copy_from_slice(&word[..take]);
+                idx += take;
+            }
+            done += step;
+        }
         Ok(())
     }
 
-    pub fn into_nor_flash<const WRITE_GRAN: usize, const ERASE_GRAN: usize>(
-        self,
-        config: NorFlashConfig,
-    ) -> Result<MpiNorFlash<'d, T, WRITE_GRAN, ERASE_GRAN>, Error> {
-        let window_size = instance_code_bus_window_size::<T>();
-        Self::validate_nor_flash_config::<WRITE_GRAN, ERASE_GRAN>(&config, window_size)?;
-
-        let mut this = self;
-        let address_size = config.address_size;
-        let ahb_read_cmd = if address_size == AddressSize::FourBytes {
-            config
-                .commands
-                .ahb_read_4byte
-                .unwrap_or(config.commands.ahb_read)
-        } else {
-            config.commands.ahb_read
-        };
-        let running_from_xip = running_from_instance_code_bus_flash::<T>();
-        let needs_4byte_address = config.capacity > NOR_FLASH_MAX_3B_CAPACITY_BYTES;
-
-        if needs_4byte_address {
-            if running_from_xip && !config.allow_preconfigured_4byte_in_xip {
-                return Err(Error::RequiresPreconfigured4ByteMode);
-            }
-
-            if let Some(cmd) = config.commands.enter_4byte_address {
-                // When executing from this instance's XIP window, changing the flash's
-                // global address mode can desynchronize instruction fetch and fault.
-                // In that case, keep the current mode and assume boot/runtime already
-                // configured a compatible 4-byte read path.
-                if !running_from_xip
-                    && !ram_wrapper_issue_simple_cmd(this.regs(), cmd, config.max_ready_polls)
-                {
-                    return Err(Error::Timeout);
-                }
-            }
+    fn transfer_write(
+        &mut self,
+        slot: CommandSlot,
+        command: u8,
+        base_address: u32,
+        config: CommandConfig,
+        auto_increment_address: bool,
+        data: &[u8],
+    ) -> Result<(), Error> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        if slot != CommandSlot::Cmd1 {
+            return Err(Error::InvalidConfiguration);
         }
 
-        if !running_from_xip {
-            this.configure_ahb_read_command(
-                ahb_read_cmd,
-                AhbCommandConfig::single_io(address_size),
-            )?;
+        let mut done = 0usize;
+        while done < data.len() {
+            let step = min(FIFO_SIZE_BYTES, data.len() - done);
+            let address = if auto_increment_address {
+                base_address.saturating_add(done as u32)
+            } else {
+                base_address
+            };
+
+            self.clear_fifo(FifoClear::Tx);
+            let mut idx = 0usize;
+            while idx < step {
+                let take = min(4, step - idx);
+                self.write_word(pack_le_word(&data[done + idx..done + idx + take]));
+                idx += take;
+            }
+
+            self.configure_command_for(slot, config)?;
+            self.set_data_len_for(slot, step)?;
+            self.set_command(command, address)?;
+            done += step;
         }
 
-        Ok(MpiNorFlash {
-            mpi: this,
-            config,
-            exec: NorExecBackend::from_running_from_xip(running_from_xip),
-        })
+        Ok(())
     }
 }
