@@ -838,6 +838,7 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
                 });
 
             let module_ident = format_ident!("{}", module_name);
+            let is_mpi_module = module_name == "mpi";
             let peripheral_ident = format_ident!("{}", peripheral_str.to_uppercase());
             let trait_ident = if signal_str.is_empty() {
                 format_ident!("Dma")
@@ -851,6 +852,7 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
                 // Clone the variables that will be moved into the inner closure.
                 // This ensures each iteration of the inner map gets its own copy.
                 let module_ident = module_ident.clone();
+                let is_mpi_module = is_mpi_module;
                 let peripheral_ident = peripheral_ident.clone();
                 let trait_ident = trait_ident.clone();
                 let request_variant = request_variant.clone();
@@ -859,8 +861,15 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
                     // Generate an impl for each channel
                     let channel_ident = format_ident!("{}_CH{}", dmac_name, i);
 
-                    quote! {
-                        dma_trait_impl!(crate::#module_ident::#trait_ident, #peripheral_ident, #channel_ident, Request::#request_variant);
+                    if is_mpi_module {
+                        quote! {
+                            #[cfg(all(target_arch = "arm", target_os = "none"))]
+                            dma_trait_impl!(crate::#module_ident::#trait_ident, #peripheral_ident, #channel_ident, Request::#request_variant);
+                        }
+                    } else {
+                        quote! {
+                            dma_trait_impl!(crate::#module_ident::#trait_ident, #peripheral_ident, #channel_ident, Request::#request_variant);
+                        }
                     }
                 })
             })
