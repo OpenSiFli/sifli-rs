@@ -104,7 +104,7 @@ async fn main(_spawner: Spawner) {
                 );
 
                 // Print raw hex every 20th round
-                if round % 20 == 0 {
+                if round.is_multiple_of(20) {
                     let _ = writeln!(usart, "  raw (first 4):");
                     for i in 0..4 {
                         let w = samples[i];

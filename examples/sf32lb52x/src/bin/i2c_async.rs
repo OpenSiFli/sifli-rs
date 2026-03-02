@@ -88,20 +88,14 @@ async fn main(_spawner: Spawner) {
 
     // LSM6DSx IMU (0x6A or 0x6B, WHO_AM_I register 0x0F)
     for addr in [0x6Au8, 0x6B] {
-        match i2c.write_read(addr, &[0x0F], &mut buf).await {
-            Ok(_) => {
-                let _ = writeln!(usart, "LSM6DSx (0x{:02X}) WHO_AM_I: 0x{:02X}", addr, buf[0]);
-            }
-            Err(_) => {}
+        if i2c.write_read(addr, &[0x0F], &mut buf).await.is_ok() {
+            let _ = writeln!(usart, "LSM6DSx (0x{:02X}) WHO_AM_I: 0x{:02X}", addr, buf[0]);
         }
     }
 
     // QMC5883L / QMI8658 etc at 0x29
-    match i2c.write_read(0x29, &[0x00], &mut buf).await {
-        Ok(_) => {
-            let _ = writeln!(usart, "Device (0x29) reg0x00: 0x{:02X}", buf[0]);
-        }
-        Err(_) => {}
+    if i2c.write_read(0x29, &[0x00], &mut buf).await.is_ok() {
+        let _ = writeln!(usart, "Device (0x29) reg0x00: 0x{:02X}", buf[0]);
     }
 
     let _ = writeln!(usart, "\nEntering periodic read loop...");

@@ -105,10 +105,7 @@ impl<'d> AudioDac<'d, Blocking> {
     /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn write_blocking(&mut self, samples: &[u32]) {
         unsafe {
-            clean_dcache(
-                samples.as_ptr() as usize,
-                samples.len() * core::mem::size_of::<u32>(),
-            );
+            clean_dcache(samples.as_ptr() as usize, core::mem::size_of_val(samples));
         }
 
         audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));
@@ -132,10 +129,7 @@ impl<'d> AudioDac<'d, Blocking> {
     /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn start_circular<'buf>(&'buf mut self, samples: &'buf [u32]) -> CircularPlayback<'buf> {
         unsafe {
-            clean_dcache(
-                samples.as_ptr() as usize,
-                samples.len() * core::mem::size_of::<u32>(),
-            );
+            clean_dcache(samples.as_ptr() as usize, core::mem::size_of_val(samples));
         }
 
         audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));
@@ -211,10 +205,7 @@ impl<'d> AudioDac<'d, Async> {
     /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub async fn write(&mut self, samples: &[u32]) -> Result<(), Error> {
         unsafe {
-            clean_dcache(
-                samples.as_ptr() as usize,
-                samples.len() * core::mem::size_of::<u32>(),
-            );
+            clean_dcache(samples.as_ptr() as usize, core::mem::size_of_val(samples));
         }
 
         audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));

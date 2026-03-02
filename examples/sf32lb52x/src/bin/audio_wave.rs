@@ -133,7 +133,7 @@ fn rgb565(r: u8, g: u8, b: u8) -> u16 {
 
 #[inline(always)]
 fn put(fb: &mut [u8], x: i32, y: i32, c: u16) {
-    if x >= 0 && x < W && y >= 0 && y < H {
+    if (0..W).contains(&x) && (0..H).contains(&y) {
         let off = (y as usize * WIDTH + x as usize) * 2;
         let b = c.to_le_bytes();
         fb[off] = b[0];
@@ -159,8 +159,8 @@ fn fill(fb: &mut [u8], x0: i32, y0: i32, w: i32, h: i32, c: u16) {
 
 /// Draw a line between two points (Bresenham).
 fn line(fb: &mut [u8], x0: i32, y0: i32, x1: i32, y1: i32, c: u16) {
-    let mut dx = (x1 - x0).abs();
-    let mut dy = -(y1 - y0).abs();
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
     let sx: i32 = if x0 < x1 { 1 } else { -1 };
     let sy: i32 = if y0 < y1 { 1 } else { -1 };
     let mut err = dx + dy;
@@ -364,7 +364,7 @@ async fn main(_spawner: Spawner) {
         }
 
         // Periodic debug
-        if frame % 200 == 0 {
+        if frame.is_multiple_of(200) {
             let mut min_l: i16 = i16::MAX;
             let mut max_l: i16 = i16::MIN;
             for &w in audio_buf.iter() {
@@ -506,7 +506,7 @@ async fn main(_spawner: Spawner) {
         }
 
         // pp display at bottom
-        if frame % 5 == 0 {
+        if frame.is_multiple_of(5) {
             let mut min_l: i16 = i16::MAX;
             let mut max_l: i16 = i16::MIN;
             for i in 0..PLOT_W as usize {

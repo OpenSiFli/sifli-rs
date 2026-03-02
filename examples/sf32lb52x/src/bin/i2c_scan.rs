@@ -160,13 +160,13 @@ async fn main(_spawner: Spawner) {
             let _ = write!(usart, "\r\n{:02X}:", addr);
         }
 
-        if addr < 0x08 || addr > 0x77 {
+        if !(0x08..=0x77).contains(&addr) {
             let _ = write!(usart, "   ");
             continue;
         }
 
         // Probe: try writing zero bytes (address-only)
-        let t0 = embassy_time::Instant::now();
+        let _t0 = embassy_time::Instant::now();
         match i2c.blocking_write(addr, &[]) {
             Ok(_) => {
                 let _ = write!(usart, " {:02X}", addr);

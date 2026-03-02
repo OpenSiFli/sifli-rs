@@ -87,15 +87,14 @@ async fn main(spawner: Spawner) {
         static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
         static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
 
-        let builder = embassy_usb::Builder::new(
+        embassy_usb::Builder::new(
             driver,
             config,
             CONFIG_DESCRIPTOR.init([0; 256]),
             BOS_DESCRIPTOR.init([0; 256]),
             &mut [], // no msos descriptors
             CONTROL_BUF.init([0; 64]),
-        );
-        builder
+        )
     };
 
     // Create classes on the builder.

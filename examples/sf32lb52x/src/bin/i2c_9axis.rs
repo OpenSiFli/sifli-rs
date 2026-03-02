@@ -231,23 +231,19 @@ async fn main(_spawner: Spawner) {
     let _ = writeln!(usart, "\nReading sensor data...\r\n");
 
     loop {
-        if has_imu {
-            if let Some((accel, gyro)) = read_lsm6(&mut i2c) {
-                // ±4g: sensitivity = 0.122 mg/LSB → mg = raw * 122 / 1000
-                // ±500dps: sensitivity = 17.50 mdps/LSB
-                let _ = writeln!(
-                    usart,
-                    "Accel: X={:6} Y={:6} Z={:6}  Gyro: X={:6} Y={:6} Z={:6}",
-                    accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2],
-                );
-            }
+        if has_imu && let Some((accel, gyro)) = read_lsm6(&mut i2c) {
+            // ±4g: sensitivity = 0.122 mg/LSB → mg = raw * 122 / 1000
+            // ±500dps: sensitivity = 17.50 mdps/LSB
+            let _ = writeln!(
+                usart,
+                "Accel: X={:6} Y={:6} Z={:6}  Gyro: X={:6} Y={:6} Z={:6}",
+                accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2],
+            );
         }
 
-        if has_mag {
-            if let Some(mag) = read_mmc5603(&mut i2c) {
-                // 16-bit mode: 1 LSB ≈ 0.0625 mGauss (range ±30 Gauss)
-                let _ = writeln!(usart, "Mag:   X={:6} Y={:6} Z={:6}", mag[0], mag[1], mag[2],);
-            }
+        if has_mag && let Some(mag) = read_mmc5603(&mut i2c) {
+            // 16-bit mode: 1 LSB ≈ 0.0625 mGauss (range ±30 Gauss)
+            let _ = writeln!(usart, "Mag:   X={:6} Y={:6} Z={:6}", mag[0], mag[1], mag[2],);
         }
 
         Timer::after_millis(100).await;
