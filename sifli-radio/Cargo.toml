@@ -5,8 +5,8 @@ edition = "2021"
 description = "Bluetooth radio stack for SiFli MCUs"
 categories = ["hardware-support", "embedded", "no-std"]
 keywords = ["bluetooth", "ble", "sifli", "sf32"]
-repository = "https://github.com/Ic-arbon/sifli-rs"
-homepage = "https://github.com/Ic-arbon/sifli-rs"
+repository = "https://github.com/OpenSiFli/sifli-rs"
+homepage = "https://github.com/OpenSiFli/sifli-rs"
 license = "Apache-2.0"
 
 [dependencies]

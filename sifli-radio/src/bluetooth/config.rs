@@ -1,8 +1,8 @@
 //! BLE configuration types.
 //!
-//! User-facing configuration via [`BleInitConfig`] builder pattern.
-//! Advanced users can customize [`EmConfig`] and [`ActConfig`] for
-//! Exchange Memory layout and activity limits.
+//! User-facing configuration for ROM parameters, Exchange Memory layout,
+//! and BLE/BT activity limits. These are written to the ROM configuration
+//! area before LCPU startup (Letter Series only for EM/ACT).
 
 use crate::memory_map::rom_config::act::valid as act_valid;
 
@@ -10,13 +10,24 @@ use crate::memory_map::rom_config::act::valid as act_valid;
 ///
 /// Applied after LCPU boot to configure BLE scheduling and timing.
 /// Not user-facing — configured via [`BleInitConfig`] builders.
+/// SDK equivalent: parameters set by `ble_xtal_less_init()` in `bluetooth.c:79`.
 #[derive(Debug, Clone, Copy)]
 pub struct ControllerConfig {
-    /// Link Layer Driver programming delay (625us slots). SDK default: 3.
+    /// Link Layer Driver programming delay (625us slots).
+    ///
+    /// Controls how far in advance the BLE scheduler programs radio events.
+    /// SDK: `rom_config_set_lld_prog_delay(3)` for SF32LB52x.
+    /// A value of 0 causes connection failures due to missed radio events.
     pub(crate) lld_prog_delay: u8,
-    /// Whether LXT is used for BLE sleep timing. Follows `RomConfig::enable_lxt`.
+    /// Whether external 32kHz crystal (LXT) is enabled for BLE sleep timing.
+    ///
+    /// SDK: `rom_config_set_default_xtal_enabled(0)` when no LXT on board.
+    /// If `true` but no LXT present, BLE scheduler misses all events → 0x3E disconnect.
     pub(crate) xtal_enabled: bool,
-    /// RC oscillator cycle count for BLE sleep timing. SDK default: 20.
+    /// RC oscillator cycle count for BLE sleep timing.
+    ///
+    /// SDK: `rom_config_set_default_rc_cycle(HAL_RC_CAL_GetLPCycle_ex())`.
+    /// Typical value: 20 (SDK default when using RC10K).
     pub(crate) rc_cycle: u8,
     /// Enable BLE power management (idle hook, sleep scheduling, LP clock).
     pub(crate) pm_enabled: bool,
@@ -50,8 +61,10 @@ pub struct RomConfig {
     /// Enable external low-speed crystal (default true).
     pub(crate) enable_lxt: bool,
     /// BLE Exchange Memory buffer layout (Letter Series only).
+    /// `None` = use ROM defaults.
     pub(crate) em_config: Option<EmConfig>,
     /// BLE/BT activity configuration (Letter Series only).
+    /// `None` = use ROM defaults.
     pub(crate) act_config: Option<ActConfig>,
 }
 
@@ -74,6 +87,10 @@ impl Default for RomConfig {
 }
 
 /// BLE Exchange Memory buffer configuration.
+///
+/// Defines internal memory layout of the BLE controller's Exchange Memory.
+/// Written to ROM config area at offset 32 (Letter Series only).
+/// Reference: `HAL_LCPU_CONFIG_BT_EM_BUF` in SDK.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct EmConfig {
@@ -86,6 +103,7 @@ pub struct EmConfig {
 impl EmConfig {
     pub const MAX_NUM: usize = 40;
 
+    /// Default configuration matching SDK `g_em_offset` (SF32LB52X peripheral example).
     pub const DEFAULT: Self = Self {
         is_valid: 1,
         em_buf: [
@@ -133,7 +151,13 @@ impl Default for ActConfig {
 /// Not user-facing — configured via [`BleInitConfig`] builders.
 #[derive(Debug, Clone, Copy)]
 pub struct BleConfig {
+    /// BLE controller runtime parameters (applied after boot).
+    /// SDK equivalent: `ble_xtal_less_init()` in `bluetooth.c`.
     pub(crate) controller: ControllerConfig,
+    /// Public BD address written to NVDS shared memory.
+    ///
+    /// LCPU ROM reads this during initialization.
+    /// Default: `[0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD]` (SDK default).
     pub(crate) bd_addr: [u8; 6],
 }
 

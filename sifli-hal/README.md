@@ -166,7 +166,7 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
             <td>ExtDMA</td><td></td><td></td><td></td>
         </tr>
         <tr>
-            <td rowspan="3"><strong>Bluetooth</strong></td>
+            <td rowspan="3"><strong><a href="../sifli-radio">Bluetooth</a></strong></td>
             <td>RF Calibration</td>
             <td>✅</td><td></td><td></td>
         </tr>
@@ -315,11 +315,7 @@ A simple SF32LB52x+slint+lcdc qspi+co5300 AMOLED example can be found [here](htt
 
 - `unchecked-overclocking`: Enable this feature to disable the overclocking check. DO NOT ENABLE THIS FEATURE UNLESS YOU KNOW WHAT YOU'RE DOING.
 
-- `sf32lb52x-lcpu`: Select SF32LB52x LCPU.
-
-- `edr-cal`: Enable EDR LO 3GHz calibration (VCO3G + OSLO). Only needed for BR/EDR (classic Bluetooth). BLE-only applications can skip this for faster boot.
-
-- `bt-hci`: Enable bt-hci transport layer for IPC HCI communication.
+For Bluetooth-related features (`sf32lb52x-lcpu`, `edr`, etc.), see [sifli-radio](../sifli-radio).
 
 ## License
 
