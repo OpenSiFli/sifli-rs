@@ -861,7 +861,7 @@ fn clear_all_flags(regs: Regs) {
 fn compute_timing(i2c_clk: Hertz, target: Hertz) -> (u16, u8) {
     let dnf = 0u32;
     let target_hz = if target.0 == 0 { 1 } else { target.0 };
-    let flv = ((i2c_clk.0 + (target_hz / 2)) / target_hz - dnf - 7 + 1) / 2;
+    let flv = ((i2c_clk.0 + (target_hz / 2)) / target_hz - dnf - 7).div_ceil(2);
     let flv = flv.min(0x1FF);
 
     let cnt = flv / 2;

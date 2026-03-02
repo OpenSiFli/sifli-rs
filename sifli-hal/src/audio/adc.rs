@@ -113,10 +113,7 @@ impl<'d> AudioAdc<'d, Blocking> {
         rx_ch0_disable();
 
         unsafe {
-            invalidate_dcache(
-                buf.as_ptr() as usize,
-                buf.len() * core::mem::size_of::<u32>(),
-            );
+            invalidate_dcache(buf.as_ptr() as usize, core::mem::size_of_val(buf));
         }
     }
 }
@@ -176,10 +173,7 @@ impl<'d> AudioAdc<'d, Async> {
         rx_ch0_disable();
 
         unsafe {
-            invalidate_dcache(
-                buf.as_ptr() as usize,
-                buf.len() * core::mem::size_of::<u32>(),
-            );
+            invalidate_dcache(buf.as_ptr() as usize, core::mem::size_of_val(buf));
         }
 
         Ok(())

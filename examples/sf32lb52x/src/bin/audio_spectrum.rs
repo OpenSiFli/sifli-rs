@@ -194,7 +194,7 @@ fn rgb565(r: u8, g: u8, b: u8) -> u16 {
 
 #[inline(always)]
 fn set_pixel(buf: &mut [u8], x: i32, y: i32, color: u16) {
-    if x >= 0 && x < WIDTH_I && y >= 0 && y < HEIGHT_I {
+    if (0..WIDTH_I).contains(&x) && (0..HEIGHT_I).contains(&y) {
         let offset = (y as usize * WIDTH + x as usize) * 2;
         let bytes = color.to_le_bytes();
         buf[offset] = bytes[0];
@@ -497,7 +497,7 @@ async fn main(_spawner: Spawner) {
         }
         let rms = sqrtf(rms_sum / FFT_N as f32);
         let vu_db = if rms > 0.5 { 20.0 * log10f(rms) } else { 0.0 };
-        let vu_level = ((vu_db - DB_FLOOR) / DB_RANGE).max(0.0).min(1.0);
+        let vu_level = ((vu_db - DB_FLOOR) / DB_RANGE).clamp(0.0, 1.0);
 
         // 7. Render spectrum bars (clear + redraw area)
         // Clear spectrum area
@@ -519,7 +519,7 @@ async fn main(_spawner: Spawner) {
         // Draw bars
         for i in 0..NUM_BARS {
             let bar_h = (display_bars[i] * SPECTRUM_HEIGHT as f32) as i32;
-            let bar_h = bar_h.max(1).min(SPECTRUM_HEIGHT);
+            let bar_h = bar_h.clamp(1, SPECTRUM_HEIGHT);
             let bx = bar_x_start + i as i32 * (BAR_WIDTH + BAR_GAP);
             let by = SPECTRUM_BOTTOM - bar_h;
 
@@ -536,7 +536,7 @@ async fn main(_spawner: Spawner) {
 
             // Peak marker (thin white line)
             let peak_h = (peak_bars[i] * SPECTRUM_HEIGHT as f32) as i32;
-            let peak_y = SPECTRUM_BOTTOM - peak_h.max(1).min(SPECTRUM_HEIGHT);
+            let peak_y = SPECTRUM_BOTTOM - peak_h.clamp(1, SPECTRUM_HEIGHT);
             if peak_h > 2 {
                 let peak_color = rgb565(255, 255, 255);
                 fill_rect(fb, bx, peak_y, BAR_WIDTH, 2, peak_color);

@@ -519,10 +519,10 @@ fn generate_peripherals_singleton(
     let struct_peripheral_names: Vec<_> = all_peripheral_names
         .iter()
         .filter(|ident| {
-            if let Some(td) = &time_driver {
-                if ident.to_string().to_ascii_uppercase() == td.to_ascii_uppercase() {
-                    return false;
-                }
+            if let Some(td) = &time_driver
+                && ident.to_string().eq_ignore_ascii_case(td)
+            {
+                return false;
             }
             true
         })

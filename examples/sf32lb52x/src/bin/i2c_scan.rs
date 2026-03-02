@@ -160,7 +160,7 @@ async fn main(_spawner: Spawner) {
             let _ = write!(usart, "\r\n{:02X}:", addr);
         }
 
-        if addr < 0x08 || addr > 0x77 {
+        if !(0x08..=0x77).contains(&addr) {
             let _ = write!(usart, "   ");
             continue;
         }
