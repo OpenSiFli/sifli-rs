@@ -141,7 +141,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     token_stream.extend(interrupt_mod);
 
     // Generate peripherals singleton
-    let peripherals_singleton = generate_peripherals_singleton(&peripherals, &dma, &mailbox);
+    let peripherals_singleton =
+        generate_peripherals_singleton(&peripherals, &dma, &mailbox, _time_driver_peripheral);
     token_stream.extend(peripherals_singleton);
 
     // Generate rcc implementations
@@ -435,6 +436,7 @@ fn generate_peripherals_singleton(
     peripherals: &Peripherals,
     dma: &build_serde::Dma,
     mailbox: &build_serde::Mailbox,
+    time_driver: Option<String>,
 ) -> TokenStream {
     // Generate singletons for HCPU peripherals
     let hcpu_peripheral_names: Vec<_> = peripherals
@@ -506,15 +508,33 @@ fn generate_peripherals_singleton(
         })
         .collect();
 
+    let mut all_peripheral_names = Vec::new();
+    all_peripheral_names.extend(hcpu_peripheral_names);
+    all_peripheral_names.extend(lcpu_peripheral_names);
+    all_peripheral_names.extend(gpio_pins);
+    all_peripheral_names.extend(hcpu_dmac_channels);
+    all_peripheral_names.extend(lcpu_dmac_channels);
+    all_peripheral_names.extend(mailbox_channels);
+
+    let struct_peripheral_names: Vec<_> = all_peripheral_names
+        .iter()
+        .filter(|ident| {
+            if let Some(td) = &time_driver {
+                if ident.to_string().to_ascii_uppercase() == td.to_ascii_uppercase() {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
     quote! {
-        embassy_hal_internal::peripherals! {
-            #(#hcpu_peripheral_names,)*
-            #(#lcpu_peripheral_names,)*
-            #(#gpio_pins,)*
-            #(#hcpu_dmac_channels,)*
-            #(#lcpu_dmac_channels,)*
-            #(#mailbox_channels,)*
-        }
+        embassy_hal_internal::peripherals_definition!(
+            #(#all_peripheral_names,)*
+        );
+        embassy_hal_internal::peripherals_struct!(
+            #(#struct_peripheral_names,)*
+        );
     }
 }
 
