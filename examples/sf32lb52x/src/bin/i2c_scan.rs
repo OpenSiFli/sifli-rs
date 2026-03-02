@@ -166,7 +166,7 @@ async fn main(_spawner: Spawner) {
         }
 
         // Probe: try writing zero bytes (address-only)
-        let t0 = embassy_time::Instant::now();
+        let _t0 = embassy_time::Instant::now();
         match i2c.blocking_write(addr, &[]) {
             Ok(_) => {
                 let _ = write!(usart, " {:02X}", addr);

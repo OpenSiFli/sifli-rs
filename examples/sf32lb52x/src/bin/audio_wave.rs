@@ -159,8 +159,8 @@ fn fill(fb: &mut [u8], x0: i32, y0: i32, w: i32, h: i32, c: u16) {
 
 /// Draw a line between two points (Bresenham).
 fn line(fb: &mut [u8], x0: i32, y0: i32, x1: i32, y1: i32, c: u16) {
-    let mut dx = (x1 - x0).abs();
-    let mut dy = -(y1 - y0).abs();
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
     let sx: i32 = if x0 < x1 { 1 } else { -1 };
     let sy: i32 = if y0 < y1 { 1 } else { -1 };
     let mut err = dx + dy;

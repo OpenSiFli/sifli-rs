@@ -911,7 +911,7 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
                 #[cfg(feature = "rt")]
                 #[crate::interrupt]
                 unsafe fn #channel_ident() {
-                    <crate::peripherals::#channel_ident as crate::dma::ChannelInterrupt>::on_irq();
+                    unsafe { <crate::peripherals::#channel_ident as crate::dma::ChannelInterrupt>::on_irq() };
                 }
             });
         }
@@ -947,7 +947,7 @@ fn generate_dma_impls(dma: &build_serde::Dma) -> TokenStream {
             match_arms.extend(quote! {
                 #current_channel_id => {
                     crate::interrupt::typelevel::#channel_ident::set_priority(priority);
-                    crate::interrupt::typelevel::#channel_ident::enable();
+                    unsafe { crate::interrupt::typelevel::#channel_ident::enable() };
                 }
             });
             current_channel_id += 1;
