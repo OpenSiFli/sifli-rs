@@ -34,7 +34,7 @@ pub(super) fn plan_next_erase_step(
 
     if remaining >= ERASE_BLOCK_64K_BYTES
         && (addr & (ERASE_BLOCK_64K_BYTES - 1)) == 0
-        && (ERASE_BLOCK_64K_BYTES % erase_gran) == 0
+        && ERASE_BLOCK_64K_BYTES.is_multiple_of(erase_gran)
     {
         if let Some(cmd) = block64_opcode {
             return (cmd, ERASE_BLOCK_64K_BYTES);
@@ -42,7 +42,7 @@ pub(super) fn plan_next_erase_step(
     }
     if remaining >= ERASE_BLOCK_32K_BYTES
         && (addr & (ERASE_BLOCK_32K_BYTES - 1)) == 0
-        && (ERASE_BLOCK_32K_BYTES % erase_gran) == 0
+        && ERASE_BLOCK_32K_BYTES.is_multiple_of(erase_gran)
     {
         if let Some(cmd) = block32_opcode {
             return (cmd, ERASE_BLOCK_32K_BYTES);

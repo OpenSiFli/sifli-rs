@@ -9,148 +9,16 @@ use super::super::types::{
     MpiInitConfig, PhaseMode,
 };
 use super::super::xip;
-use super::super::{Instance, Regs};
+use super::super::Instance;
 use super::detect::JedecId;
 use super::profile::{AddressingPolicy, NorConfig, ResolvedProfile};
 use crate::Peripheral;
-
-#[derive(Clone, Copy)]
-enum NorExecBackend {
-    Direct,
-    XipSafe,
-}
-
-impl NorExecBackend {
-    const fn from_running_from_xip(running_from_xip: bool) -> Self {
-        if running_from_xip {
-            Self::XipSafe
-        } else {
-            Self::Direct
-        }
-    }
-
-    #[inline(always)]
-    const fn xip_safe(self) -> bool {
-        matches!(self, Self::XipSafe)
-    }
-
-    #[inline(always)]
-    fn issue_simple_cmd(self, regs: Regs, cmd: u8, max_polls: u32) -> bool {
-        xip::issue_simple_cmd(regs, cmd, max_polls, self.xip_safe())
-    }
-
-    #[inline(always)]
-    fn wait_ready(self, regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool {
-        xip::wait_ready(regs, read_status_cmd, max_polls, self.xip_safe())
-    }
-
-    #[inline(always)]
-    fn read_status(self, regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()> {
-        xip::read_status(regs, cmd, max_polls, self.xip_safe())
-    }
-
-    #[inline(always)]
-    fn read_jedec_id(self, regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()> {
-        xip::read_jedec_id(regs, cmd, max_polls, self.xip_safe())
-    }
-
-    #[inline(always)]
-    fn read_command_stream(
-        self,
-        regs: Regs,
-        cmd: u8,
-        addr: Option<u32>,
-        addr_size: u8,
-        dummy_cycles: u8,
-        out: &mut [u8],
-        max_polls: u32,
-    ) -> bool {
-        xip::read_command_stream(
-            regs,
-            cmd,
-            addr,
-            addr_size,
-            dummy_cycles,
-            out,
-            max_polls,
-            self.xip_safe(),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
-    fn program_chunk(
-        self,
-        regs: Regs,
-        wren_cmd: u8,
-        program_cmd: u8,
-        read_status_cmd: u8,
-        addr: u32,
-        addr_size: u8,
-        data: &[u8],
-        max_polls: u32,
-    ) -> bool {
-        xip::program_chunk(
-            regs,
-            wren_cmd,
-            program_cmd,
-            read_status_cmd,
-            addr,
-            addr_size,
-            data,
-            max_polls,
-            self.xip_safe(),
-        )
-    }
-
-    #[inline(always)]
-    fn erase_sector(
-        self,
-        regs: Regs,
-        wren_cmd: u8,
-        erase_cmd: u8,
-        read_status_cmd: u8,
-        addr: u32,
-        addr_size: u8,
-        max_polls: u32,
-    ) -> bool {
-        xip::erase_sector(
-            regs,
-            wren_cmd,
-            erase_cmd,
-            read_status_cmd,
-            addr,
-            addr_size,
-            max_polls,
-            self.xip_safe(),
-        )
-    }
-
-    #[inline(always)]
-    fn erase_chip(
-        self,
-        regs: Regs,
-        wren_cmd: u8,
-        chip_erase_cmd: u8,
-        read_status_cmd: u8,
-        max_polls: u32,
-    ) -> bool {
-        xip::erase_chip(
-            regs,
-            wren_cmd,
-            chip_erase_cmd,
-            read_status_cmd,
-            max_polls,
-            self.xip_safe(),
-        )
-    }
-}
 
 pub(crate) struct NorBlockingCore<'d, T: Instance> {
     mpi: Mpi<'d, T>,
     profile: ResolvedProfile,
     config: NorConfig,
-    exec: NorExecBackend,
+    xip_safe: bool,
 }
 
 impl<'d, T: Instance> NorBlockingCore<'d, T> {
@@ -239,7 +107,7 @@ impl<'d, T: Instance> NorBlockingCore<'d, T> {
             mpi,
             profile,
             config,
-            exec: NorExecBackend::from_running_from_xip(running_from_xip),
+            xip_safe: running_from_xip,
         })
     }
 
@@ -252,20 +120,18 @@ impl<'d, T: Instance> NorBlockingCore<'d, T> {
     }
 
     pub(crate) fn read_jedec_id(&mut self) -> Result<JedecId, Error> {
-        let raw = self.map_timeout(self.exec.read_jedec_id(
-            T::regs(),
-            self.profile.commands.read_jedec_id,
-            self.max_ready_polls(),
-        ))?;
+        let raw = self.map_timeout(
+            self.exec_session()
+                .read_jedec_id(self.profile.commands.read_jedec_id),
+        )?;
         Ok(JedecId::from_raw(raw))
     }
 
     pub(crate) fn read_status(&mut self) -> Result<u8, Error> {
-        self.map_timeout(self.exec.read_status(
-            T::regs(),
-            self.profile.commands.read_status,
-            self.max_ready_polls(),
-        ))
+        self.map_timeout(
+            self.exec_session()
+                .read_status(self.profile.commands.read_status),
+        )
     }
 
     pub(crate) fn read_sfdp(&mut self, offset: u32, out: &mut [u8]) -> Result<(), Error> {
@@ -411,6 +277,11 @@ impl<'d, T: Instance> NorBlockingCore<'d, T> {
     }
 
     #[inline(always)]
+    fn exec_session(&self) -> xip::Exec {
+        xip::Exec::new(T::regs(), self.max_ready_polls(), self.xip_safe)
+    }
+
+    #[inline(always)]
     pub(crate) const fn dma_threshold_bytes(&self) -> usize {
         self.config.dma_threshold_bytes
     }
@@ -422,7 +293,7 @@ impl<'d, T: Instance> NorBlockingCore<'d, T> {
 
     #[inline(always)]
     fn ensure_direct_command_safe(&self) -> Result<(), Error> {
-        if self.exec.xip_safe() {
+        if self.xip_safe {
             return Err(Error::CommandForbiddenInXip);
         }
         Ok(())
@@ -534,55 +405,45 @@ impl<'d, T: Instance> NorBlockingCore<'d, T> {
     }
 
     fn issue_simple_command(&mut self, cmd: u8) -> Result<(), Error> {
-        let ok = self
-            .exec
-            .issue_simple_cmd(T::regs(), cmd, self.max_ready_polls());
+        let ok = self.exec_session().issue_simple_cmd(cmd);
         Self::timeout_if_false(ok)
     }
 
     fn wait_ready(&mut self) -> Result<(), Error> {
-        let ok = self.exec.wait_ready(
-            T::regs(),
-            self.profile.commands.read_status,
-            self.max_ready_polls(),
-        );
+        let ok = self
+            .exec_session()
+            .wait_ready(self.profile.commands.read_status);
         Self::timeout_if_false(ok)
     }
 
     fn erase_with_opcode(&mut self, addr: u32, erase_cmd: u8) -> Result<(), Error> {
-        let ok = self.exec.erase_sector(
-            T::regs(),
+        let ok = self.exec_session().erase_sector(
             self.profile.commands.write_enable,
             erase_cmd,
             self.profile.commands.read_status,
             addr,
             self.addr_size_bits(),
-            self.max_ready_polls(),
         );
         Self::timeout_if_false(ok)
     }
 
     fn erase_chip_internal(&mut self, erase_cmd: u8) -> Result<(), Error> {
-        let ok = self.exec.erase_chip(
-            T::regs(),
+        let ok = self.exec_session().erase_chip(
             self.profile.commands.write_enable,
             erase_cmd,
             self.profile.commands.read_status,
-            self.max_ready_polls(),
         );
         Self::timeout_if_false(ok)
     }
 
     fn program_chunk(&mut self, addr: u32, data: &[u8]) -> Result<(), Error> {
-        let ok = self.exec.program_chunk(
-            T::regs(),
+        let ok = self.exec_session().program_chunk(
             self.profile.commands.write_enable,
             self.page_program_cmd(),
             self.profile.commands.read_status,
             addr,
             self.addr_size_bits(),
             data,
-            self.max_ready_polls(),
         );
         Self::timeout_if_false(ok)
     }
@@ -611,15 +472,13 @@ impl<'d, T: Instance> NorBlockingCore<'d, T> {
             return Err(Error::InvalidConfiguration);
         }
 
-        if self.exec.xip_safe() {
-            let ok = self.exec.read_command_stream(
-                T::regs(),
+        if self.xip_safe {
+            let ok = self.exec_session().read_command_stream(
                 cmd,
                 addr,
                 addr_size.bits(),
                 dummy_cycles,
                 out,
-                self.max_ready_polls(),
             );
             return Self::timeout_if_false(ok);
         }

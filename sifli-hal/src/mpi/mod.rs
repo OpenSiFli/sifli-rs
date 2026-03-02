@@ -29,9 +29,11 @@ pub(crate) struct State {
 }
 
 impl State {
-    const NEW: Self = Self {
-        waker: AtomicWaker::new(),
-    };
+    const fn new() -> Self {
+        Self {
+            waker: AtomicWaker::new(),
+        }
+    }
 
     #[inline(always)]
     pub(crate) fn wake(&self) {
@@ -270,8 +272,8 @@ mod instance_impl {
     };
     use super::{Instance, Regs, SealedInstance, State};
 
-    static MPI1_STATE: State = State::NEW;
-    static MPI2_STATE: State = State::NEW;
+    static MPI1_STATE: State = State::new();
+    static MPI2_STATE: State = State::new();
 
     macro_rules! impl_instance {
         ($periph:ty, $irq:ident, $regs:expr, $base:expr, $end:expr, $state:expr) => {

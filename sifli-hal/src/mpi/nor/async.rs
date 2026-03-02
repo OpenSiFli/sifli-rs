@@ -65,7 +65,9 @@ fn invalidate_dcache_range(addr: usize, len: usize) {
 
     const DCACHE_LINE_SIZE: usize = 32;
     let aligned_start = addr & !(DCACHE_LINE_SIZE - 1);
-    let aligned_end = addr.saturating_add(len).saturating_add(DCACHE_LINE_SIZE - 1)
+    let aligned_end = addr
+        .saturating_add(len)
+        .saturating_add(DCACHE_LINE_SIZE - 1)
         & !(DCACHE_LINE_SIZE - 1);
     let aligned_len = aligned_end.saturating_sub(aligned_start);
 
