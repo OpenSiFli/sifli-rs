@@ -11,7 +11,7 @@ use super::{
     ClockMux, Dll, DllStage, HclkPrescaler, Lpsel, Mpisel, PclkPrescaler, Rtcsel, Sysclk,
     Ticksel, Usbsel, Wdtsel,
 };
-use super::{get_freqs, modify_freqs, set_freqs};
+use super::{modify_freqs, set_freqs};
 use super::{get_hclk_freq, read_hpsys_clocks_from_hw};
 
 /// Clock configuration

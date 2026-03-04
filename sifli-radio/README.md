@@ -1,5 +1,10 @@
 # SiFli Radio
 
+[![Support status][badge-support-status]][githubrepo]
+
+[badge-support-status]: https://img.shields.io/badge/Support_status-Community-yellow?style=for-the-badge
+[githubrepo]: https://github.com/OpenSiFli/sifli-rs
+
 Bluetooth radio stack for SiFli SF32LB52x MCUs, built on [sifli-hal](../sifli-hal) and [Embassy](https://github.com/embassy-rs/embassy).
 
 Implements LCPU (Bluetooth coprocessor) management and provides a [bt-hci](https://github.com/embassy-rs/bt-hci) controller interface for use with the [trouble](https://github.com/embassy-rs/trouble) BLE stack.
