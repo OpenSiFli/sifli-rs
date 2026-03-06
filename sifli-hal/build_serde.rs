@@ -281,6 +281,89 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+// ---------- sram_layout.toml ----------
+
+#[derive(serde::Deserialize)]
+pub struct SramLayout {
+    #[serde(default)]
+    pub banks: Vec<SramBank>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct SramBank {
+    #[allow(dead_code)]
+    pub id: String,
+    pub base: u64,
+    #[allow(dead_code)]
+    pub size: u64,
+    #[serde(default)]
+    pub regions: Vec<SramRegion>,
+    #[serde(default)]
+    pub exports: Vec<Export>,
+    #[serde(default)]
+    pub lcpu_view_offset: Option<u64>,
+    #[serde(default)]
+    pub cbus_base: Option<u64>,
+    // Fields present in TOML but unused by build.rs:
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub visible: Option<bool>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub variant: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub name: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub note: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub source: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct SramRegion {
+    #[allow(dead_code)]
+    pub name: String,
+    pub base: u64,
+    pub size: u64,
+    #[serde(default)]
+    pub exports: Vec<Export>,
+    #[serde(default)]
+    pub regions: Vec<SramRegion>,
+    // Fields present in TOML but unused by build.rs:
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub color: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub note: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub source: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct Export {
+    pub module: String,
+    pub name: String,
+    #[serde(default = "default_base")]
+    pub field: String,
+    #[serde(default = "default_usize")]
+    pub r#type: String,
+    #[serde(default)]
+    pub transform: Option<String>,
+}
+
+fn default_base() -> String {
+    "base".to_string()
+}
+
+fn default_usize() -> String {
+    "usize".to_string()
+}
+
 fn default_readwrite() -> Access {
     Access::ReadWrite
 }

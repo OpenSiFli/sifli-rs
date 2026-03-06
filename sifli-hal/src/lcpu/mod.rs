@@ -203,7 +203,7 @@ impl Lcpu {
 // Defined here (same crate) because address constants are in ram::memory_map.
 
 impl crate::syscfg::ChipRevision {
-    /// LCPU→HCPU 邮箱 CH1 地址（HCI RX 缓冲区）。
+    /// LCPU→HCPU mailbox CH1 address (HCI RX buffer).
     #[inline]
     pub fn lcpu2hcpu_ch1(&self) -> usize {
         match self {
@@ -212,7 +212,7 @@ impl crate::syscfg::ChipRevision {
         }
     }
 
-    /// LCPU→HCPU 邮箱 CH2 地址（系统 IPC RX 缓冲区）。
+    /// LCPU→HCPU mailbox CH2 address (system IPC RX buffer).
     #[inline]
     pub fn lcpu2hcpu_ch2(&self) -> usize {
         match self {

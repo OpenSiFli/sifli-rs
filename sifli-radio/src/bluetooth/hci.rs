@@ -66,10 +66,10 @@ impl<'a> LoggingReader<'a> {
     fn dump(&self, prefix: &str) {
         let end = self.pos.min(64);
         debug!(
-            "[hci] {} ({} bytes): {:02X}",
+            "[hci] {} ({} bytes): {:x}",
             prefix,
             self.pos,
-            &self.log[..end]
+            crate::fmt::Bytes(&self.log[..end])
         );
     }
 }
@@ -214,13 +214,13 @@ impl Transport for IpcHciTransport {
             if s.len() >= 4 && s[0] == 0x01 {
                 let opcode = (s[2] as u16) << 8 | s[1] as u16;
                 debug!(
-                    "[hci] tx cmd(0x{:04X}) {} bytes: {:02X}",
+                    "[hci] tx cmd(0x{:04X}) {} bytes: {:x}",
                     opcode,
                     s.len(),
-                    &s[..end]
+                    crate::fmt::Bytes(&s[..end])
                 );
             } else {
-                debug!("[hci] tx {} bytes: {:02X}", s.len(), &s[..end]);
+                debug!("[hci] tx {} bytes: {:x}", s.len(), crate::fmt::Bytes(&s[..end]));
             }
         }
 
