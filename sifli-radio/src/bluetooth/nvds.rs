@@ -6,7 +6,8 @@
 //!
 //! SDK equivalent: `bt_stack_nvds_init()` in `bf0_bt_common.c:318`.
 
-const NVDS_BUFF_START: usize = super::memory_map::shared::NVDS_BUFF_START;
+const NVDS_BUFF_START: usize = crate::memory_map::shared::NVDS_BUFF_START;
+const NVDS_BUFF_SIZE: usize = crate::memory_map::shared::NVDS_BUFF_SIZE;
 const NVDS_PATTERN: u32 = 0x4E56_4453; // "NVDS"
 
 mod tag {
@@ -18,6 +19,7 @@ mod tag {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct NvdsHeader {
     pattern: u32,
     used_mem: u16,
@@ -58,20 +60,14 @@ pub(crate) fn write_default(bd_addr: &[u8; 6], use_lxt: bool) {
     buf[pos..pos + 3].copy_from_slice(&[tag::SCHEDULING, 0x01, 0x01]);
     pos += 3;
 
-    // Write header + TLV data to shared memory
-    unsafe {
-        let dst = NVDS_BUFF_START as *mut u8;
-        let header = NvdsHeader {
+    let nvds = sifli_hal::ram::RamSlice::new(NVDS_BUFF_START, NVDS_BUFF_SIZE);
+    nvds.write(
+        0,
+        NvdsHeader {
             pattern: NVDS_PATTERN,
             used_mem: pos as u16,
             writing: 0,
-        };
-        core::ptr::write_volatile(dst as *mut NvdsHeader, header);
-        core::ptr::copy_nonoverlapping(buf.as_ptr(), dst.add(8), pos);
-    }
-
-    debug!(
-        "NVDS written: {} bytes, bd_addr={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-        pos, bd_addr[0], bd_addr[1], bd_addr[2], bd_addr[3], bd_addr[4], bd_addr[5]
+        },
     );
+    nvds.copy_at(core::mem::size_of::<NvdsHeader>(), &buf[..pos]);
 }

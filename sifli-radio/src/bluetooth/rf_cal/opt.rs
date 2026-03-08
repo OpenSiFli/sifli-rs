@@ -10,22 +10,6 @@ use crate::pac::{BT_PHY, BT_RFC};
 
 /// Post-calibration PHY/RFC optimization.
 pub(super) fn bt_rf_opt_cal() {
-    debug!(
-        "opt_cal BEFORE: TRF1=0x{:08X} TRF2=0x{:08X} RBB1=0x{:08X} RBB2=0x{:08X} RBB4=0x{:08X}",
-        BT_RFC.trf_reg1().read().0,
-        BT_RFC.trf_reg2().read().0,
-        BT_RFC.rbb_reg1().read().0,
-        BT_RFC.rbb_reg2().read().0,
-        BT_RFC.rbb_reg4().read().0,
-    );
-    debug!(
-        "opt_cal BEFORE: TX_CTRL=0x{:08X} DEMOD1=0x{:08X} GAUSS1=0x{:08X} GAUSS2=0x{:08X}",
-        BT_PHY.tx_ctrl().read().0,
-        BT_PHY.demod_cfg1().read().0,
-        BT_PHY.tx_gaussflt_cfg1().read().0,
-        BT_PHY.tx_gaussflt_cfg2().read().0,
-    );
-
     // --- PA configuration ---
     BT_RFC.trf_reg1().modify(|w| {
         w.set_brf_pa_pm_lv(0x01);
@@ -249,34 +233,4 @@ pub(super) fn bt_rf_opt_cal() {
         w.set_brf_cbpf_w2x_stg1_lv_br(true);
         w.set_brf_cbpf_w2x_stg2_lv_br(true);
     });
-
-    debug!(
-        "opt_cal AFTER: TRF1=0x{:08X} TRF2=0x{:08X} RBB1=0x{:08X} RBB2=0x{:08X} RBB4=0x{:08X}",
-        BT_RFC.trf_reg1().read().0,
-        BT_RFC.trf_reg2().read().0,
-        BT_RFC.rbb_reg1().read().0,
-        BT_RFC.rbb_reg2().read().0,
-        BT_RFC.rbb_reg4().read().0,
-    );
-    debug!(
-        "opt_cal AFTER: TX_CTRL=0x{:08X} DEMOD1=0x{:08X} GAUSS1=0x{:08X} GAUSS2=0x{:08X}",
-        BT_PHY.tx_ctrl().read().0,
-        BT_PHY.demod_cfg1().read().0,
-        BT_PHY.tx_gaussflt_cfg1().read().0,
-        BT_PHY.tx_gaussflt_cfg2().read().0,
-    );
-    debug!(
-        "opt_cal AFTER: IF_MOD3=0x{:08X} IF_MOD5=0x{:08X} IF_MOD6=0x{:08X} IF_MOD7=0x{:08X}",
-        BT_PHY.tx_if_mod_cfg3().read().0,
-        BT_PHY.tx_if_mod_cfg5().read().0,
-        BT_PHY.tx_if_mod_cfg6().read().0,
-        BT_PHY.tx_if_mod_cfg7().read().0,
-    );
-    debug!(
-        "opt_cal AFTER: DPSK1=0x{:08X} DPSK2=0x{:08X} MIXER1=0x{:08X} TRF_EDR1=0x{:08X}",
-        BT_PHY.tx_dpsk_cfg1().read().0,
-        BT_PHY.tx_dpsk_cfg2().read().0,
-        BT_PHY.mixer_cfg1().read().0,
-        BT_RFC.trf_edr_reg1().read().0,
-    );
 }

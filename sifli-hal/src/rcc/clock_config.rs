@@ -8,10 +8,10 @@ use crate::time::Hertz;
 use core::sync::atomic::{Ordering, compiler_fence};
 
 use super::{
-    ClockMux, Clocks, Dll, DllStage, HclkPrescaler, Lpsel, Mpisel, PclkPrescaler, Rtcsel, Sysclk,
+    ClockMux, Dll, DllStage, HclkPrescaler, Lpsel, Mpisel, PclkPrescaler, Rtcsel, Sysclk,
     Ticksel, Usbsel, Wdtsel,
 };
-use super::{get_freqs, set_freqs};
+use super::{modify_freqs, set_freqs};
 use super::{get_hclk_freq, read_hpsys_clocks_from_hw};
 
 /// Clock configuration
@@ -458,16 +458,15 @@ pub fn reconfigure_sysclk(config: Config) {
     });
 
     // Update global frequency state from hardware
-    unsafe {
-        let prev = *get_freqs();
-        let hw = read_hpsys_clocks_from_hw();
-        set_freqs(Clocks {
-            // Preserve audio PLL state (managed by AUDCODEC driver)
-            clk_aud_pll: prev.clk_aud_pll,
-            clk_aud_pll_div16: prev.clk_aud_pll_div16,
-            ..hw
-        });
-    }
+    let hw = read_hpsys_clocks_from_hw();
+    modify_freqs(|clocks| {
+        // Preserve audio PLL state (managed by AUDCODEC driver)
+        let aud_pll = clocks.clk_aud_pll;
+        let aud_pll_div16 = clocks.clk_aud_pll_div16;
+        *clocks = hw;
+        clocks.clk_aud_pll = aud_pll;
+        clocks.clk_aud_pll_div16 = aud_pll_div16;
+    });
 }
 
 // =============================================================================
