@@ -4,10 +4,12 @@ hcpu:
     request:
       - name: mpi1
         id: 0
-        used: false
+        used: true
+        module: mpi
       - name: mpi2
         id: 1
-        used: false
+        used: true
+        module: mpi
       - name: i2c4
         id: 3
         used: false

@@ -97,6 +97,7 @@ log = ["dep:log"]
 ## If this is an issue for you, you're encouraged to directly depend on a fixed version of the PAC.
 ## There are no plans to make this stable.
 unstable-pac = []
+unstable-mpi-controller = []
 
 sf32lb52x = ["sifli-pac/sf32lb52x", "musb/builtin-sf32lb52x"]
 time-driver-atim1 = ["_time-driver-atim"]
