@@ -64,7 +64,7 @@ pub(super) fn instance_code_bus_window_size<T: SealedInstance>() -> usize {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_irq_save_disable() -> u32 {
     let primask: u32;
     // SAFETY: This only reads/writes CPU PRIMASK, no memory access side effects.
@@ -80,7 +80,7 @@ pub(super) fn ram_irq_save_disable() -> u32 {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_irq_restore(saved_primask: u32) {
     // Ensure all MPI register writes are complete before returning to XIP
     // SAFETY: These are standard ARM barrier instructions with no side effects.
@@ -110,7 +110,7 @@ pub(super) fn ram_irq_restore(saved_primask: u32) {
 // involve any flash code fetches.
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_wait_not_busy(regs: Regs, max_polls: u32) -> bool {
     for _ in 0..max_polls {
         if !regs.sr().read().busy() {
@@ -122,7 +122,7 @@ pub(super) fn ram_wait_not_busy(regs: Regs, max_polls: u32) -> bool {
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_wait_tcf(regs: Regs, max_polls: u32) -> bool {
     for _ in 0..max_polls {
         if regs.sr().read().tcf() {
@@ -135,7 +135,7 @@ pub(super) fn ram_wait_tcf(regs: Regs, max_polls: u32) -> bool {
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_wait_smf(regs: Regs, max_polls: u32) -> bool {
     for _ in 0..max_polls {
         if regs.sr().read().smf() {
@@ -151,7 +151,7 @@ pub(super) fn ram_wait_smf(regs: Regs, max_polls: u32) -> bool {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_configure_ccr1(regs: Regs, fmode: bool, dmode: u8, address_mode: u8, address_size: u8) {
     regs.ccr1().modify(|w| {
         w.set_fmode(fmode);
@@ -166,7 +166,7 @@ fn ram_configure_ccr1(regs: Regs, fmode: bool, dmode: u8, address_mode: u8, addr
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_configure_cmd1_read_stream(
     regs: Regs,
     address_mode: u8,
@@ -186,7 +186,7 @@ fn ram_configure_cmd1_read_stream(
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_clear_status_flags(regs: Regs) {
     regs.scr().write(|w| {
         w.set_smfc(true);
@@ -195,45 +195,45 @@ fn ram_clear_status_flags(regs: Regs) {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_issue_cmd1(regs: Regs, addr: u32, cmd: u8) {
     regs.ar1().write(|w| w.set_addr(addr));
     regs.cmdr1().write(|w| w.set_cmd(cmd));
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_configure_wip_status_match(regs: Regs) {
     regs.smr().write(|w| w.set_status(0));
     regs.smkr().write(|w| w.set_mask(NOR_FLASH_WIP_MASK));
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_configure_simple_cmd(regs: Regs) {
     ram_configure_ccr1(regs, false, 0, 0, 0);
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_configure_status_read(regs: Regs) {
     ram_configure_ccr1(regs, false, 1, 0, 0);
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_configure_write_with_addr(regs: Regs, addr_size: u8) {
     ram_configure_ccr1(regs, true, 1, 1, addr_size);
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_configure_addr_only(regs: Regs, addr_size: u8) {
     ram_configure_ccr1(regs, false, 0, 1, addr_size);
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_configure_cmd2_status_poll(regs: Regs, read_status_cmd: u8) {
     regs.ccr2().modify(|w| {
         w.set_fmode(false);
@@ -251,7 +251,7 @@ pub(super) fn ram_configure_cmd2_status_poll(regs: Regs, read_status_cmd: u8) {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_begin_cmd2_status_poll(regs: Regs) {
     regs.cr().modify(|w| {
         w.set_cmd2e(true);
@@ -261,7 +261,7 @@ pub(super) fn ram_begin_cmd2_status_poll(regs: Regs) {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_end_cmd2_status_poll(regs: Regs) {
     regs.cr().modify(|w| {
         w.set_cmd2e(false);
@@ -271,7 +271,7 @@ pub(super) fn ram_end_cmd2_status_poll(regs: Regs) {
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_run_cmd2_status_poll(
     regs: Regs,
     read_status_cmd: u8,
@@ -288,7 +288,7 @@ fn ram_run_cmd2_status_poll(
 }
 
 #[inline(always)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_pack_le_word(chunk: &[u8]) -> u32 {
     let mut word = [0u8; 4];
     word[..chunk.len()].copy_from_slice(chunk);
@@ -296,7 +296,7 @@ fn ram_pack_le_word(chunk: &[u8]) -> u32 {
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, ()> {
     regs.fifocr().modify(|w| w.set_rxclr(true));
     ram_configure_status_read(regs);
@@ -313,7 +313,7 @@ fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, 
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool {
     ram_configure_simple_cmd(regs);
     regs.scr().write(|w| w.set_tcfc(true));
@@ -322,7 +322,7 @@ pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool 
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()> {
     // Wait for MPI to be idle before issuing manual command (critical for XIP)
     if !ram_wait_not_busy(regs, max_polls) {
@@ -334,7 +334,7 @@ pub(super) fn ram_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()> {
     if !ram_wait_not_busy(regs, max_polls) {
         return Err(());
@@ -345,7 +345,7 @@ pub(super) fn ram_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8,
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_read_command_stream(
     regs: Regs,
     cmd: u8,
@@ -399,7 +399,7 @@ pub(super) fn ram_read_command_stream(
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn ram_program_chunk(
     regs: Regs,
@@ -435,7 +435,7 @@ pub(super) fn ram_program_chunk(
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_erase_sector(
     regs: Regs,
     wren_cmd: u8,
@@ -454,7 +454,7 @@ pub(super) fn ram_erase_sector(
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_erase_chip(
     regs: Regs,
     wren_cmd: u8,
@@ -485,7 +485,7 @@ macro_rules! define_ram_irq_wrappers {
         $(
             $(#[$attr])*
             #[inline(never)]
-            #[link_section = ".data.ramfunc"]
+            #[unsafe(link_section = ".data.ramfunc")]
             pub(super) fn $name($($arg: $ty),*) -> $ret {
                 let primask = ram_irq_save_disable();
                 let result = $inner($($call),*);
@@ -561,7 +561,7 @@ define_ram_irq_wrappers! {
 }
 
 #[inline(never)]
-#[link_section = ".data.ramfunc"]
+#[unsafe(link_section = ".data.ramfunc")]
 pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool {
     ram_configure_status_read(regs);
     regs.dlr1().write(|w| w.set_dlen(0));
