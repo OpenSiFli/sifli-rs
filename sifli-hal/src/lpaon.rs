@@ -46,3 +46,17 @@ pub(crate) fn sleep_status() -> bool {
 pub(crate) fn set_wkup_req(enable: bool) {
     regs().slp_ctrl().modify(|w| w.set_wkup_req(enable));
 }
+
+/// Read the BLE sleep target duration (LP clock cycles).
+///
+/// Non-zero value indicates `_rwip_sleep()` has scheduled a sleep period.
+#[allow(dead_code)]
+pub fn sleep_target() -> u32 {
+    regs().target().read().sleep_target()
+}
+
+/// Read the actual elapsed sleep duration (LP clock cycles).
+#[allow(dead_code)]
+pub fn sleep_actual() -> u32 {
+    regs().actual().read().sleep_cnt()
+}

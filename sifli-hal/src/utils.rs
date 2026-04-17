@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use embassy_time::{Duration, Instant};
-use portable_atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+use portable_atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 /// A thread-safe bit flag structure based on AtomicU8.
 pub(crate) struct BitFlags8 {

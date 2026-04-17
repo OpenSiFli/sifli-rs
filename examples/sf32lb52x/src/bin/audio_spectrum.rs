@@ -16,23 +16,23 @@ use core::mem::MaybeUninit;
 use embassy_executor::Spawner;
 use embassy_time::Delay;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{self, AudioAdc};
 use sifli_hal::bind_interrupts;
+use sifli_hal::gpio;
 use sifli_hal::lcdc::{self, SpiConfig};
 use sifli_hal::rcc::{ConfigBuilder, Dll, DllStage, Sysclk};
 use sifli_hal::time::mhz;
-use sifli_hal::gpio;
 
 use display_driver::bus::QspiFlashBus;
 use display_driver::panel::reset::LCDResetOption;
 use display_driver::{ColorFormat, DisplayDriver};
 use display_driver_co5300::{
-    spec::{Co5300Spec, PanelSpec},
     Co5300,
+    spec::{Co5300Spec, PanelSpec},
 };
 
-use libm::{sinf, cosf, sqrtf, log10f};
+use libm::{cosf, log10f, sinf, sqrtf};
 
 // ============================================================================
 // Display config
@@ -57,7 +57,7 @@ impl Co5300Spec for MyCo5300 {
     const IGNORE_ID_CHECK: bool = true;
 }
 
-#[link_section = ".psram_bss"]
+#[unsafe(link_section = ".psram_bss")]
 static mut FB_BUF: MaybeUninit<[u8; FB_SIZE]> = MaybeUninit::uninit();
 
 bind_interrupts!(struct Irqs {
@@ -154,7 +154,11 @@ fn compute_bar_boundaries() -> [usize; NUM_BARS + 1] {
         // Logarithmic mapping: emphasize low frequencies
         let frac = i as f32 / NUM_BARS as f32;
         let bin = libm::powf(half, frac) as usize;
-        bounds[i] = if i == 0 { 1 } else { bin.max(bounds[i - 1] + 1).min(FFT_N / 2) };
+        bounds[i] = if i == 0 {
+            1
+        } else {
+            bin.max(bounds[i - 1] + 1).min(FFT_N / 2)
+        };
     }
     bounds
 }
@@ -190,7 +194,7 @@ fn rgb565(r: u8, g: u8, b: u8) -> u16 {
 
 #[inline(always)]
 fn set_pixel(buf: &mut [u8], x: i32, y: i32, color: u16) {
-    if x >= 0 && x < WIDTH_I && y >= 0 && y < HEIGHT_I {
+    if (0..WIDTH_I).contains(&x) && (0..HEIGHT_I).contains(&y) {
         let offset = (y as usize * WIDTH + x as usize) * 2;
         let bytes = color.to_le_bytes();
         buf[offset] = bytes[0];
@@ -343,7 +347,15 @@ async fn main(_spawner: Spawner) {
     };
 
     let lcdc_inst = lcdc::Lcdc::new_qspi(
-        p.LCDC1, Irqs, p.PA2, p.PA3, p.PA4, p.PA5, p.PA6, p.PA7, p.PA8,
+        p.LCDC1,
+        Irqs,
+        p.PA2,
+        p.PA3,
+        p.PA4,
+        p.PA5,
+        p.PA6,
+        p.PA7,
+        p.PA8,
         lcdc_config,
     );
     let disp_bus = QspiFlashBus::new(lcdc_inst);
@@ -485,7 +497,7 @@ async fn main(_spawner: Spawner) {
         }
         let rms = sqrtf(rms_sum / FFT_N as f32);
         let vu_db = if rms > 0.5 { 20.0 * log10f(rms) } else { 0.0 };
-        let vu_level = ((vu_db - DB_FLOOR) / DB_RANGE).max(0.0).min(1.0);
+        let vu_level = ((vu_db - DB_FLOOR) / DB_RANGE).clamp(0.0, 1.0);
 
         // 7. Render spectrum bars (clear + redraw area)
         // Clear spectrum area
@@ -495,13 +507,19 @@ async fn main(_spawner: Spawner) {
         let grid_color = rgb565(25, 25, 25);
         for i in 0..=6 {
             let y = SPECTRUM_BOTTOM - (i * SPECTRUM_HEIGHT / 6);
-            hline(fb, bar_x_start - 5, bar_x_start + total_bar_width + 5, y, grid_color);
+            hline(
+                fb,
+                bar_x_start - 5,
+                bar_x_start + total_bar_width + 5,
+                y,
+                grid_color,
+            );
         }
 
         // Draw bars
         for i in 0..NUM_BARS {
             let bar_h = (display_bars[i] * SPECTRUM_HEIGHT as f32) as i32;
-            let bar_h = bar_h.max(1).min(SPECTRUM_HEIGHT);
+            let bar_h = bar_h.clamp(1, SPECTRUM_HEIGHT);
             let bx = bar_x_start + i as i32 * (BAR_WIDTH + BAR_GAP);
             let by = SPECTRUM_BOTTOM - bar_h;
 
@@ -518,7 +536,7 @@ async fn main(_spawner: Spawner) {
 
             // Peak marker (thin white line)
             let peak_h = (peak_bars[i] * SPECTRUM_HEIGHT as f32) as i32;
-            let peak_y = SPECTRUM_BOTTOM - peak_h.max(1).min(SPECTRUM_HEIGHT);
+            let peak_y = SPECTRUM_BOTTOM - peak_h.clamp(1, SPECTRUM_HEIGHT);
             if peak_h > 2 {
                 let peak_color = rgb565(255, 255, 255);
                 fill_rect(fb, bx, peak_y, BAR_WIDTH, 2, peak_color);
@@ -528,7 +546,14 @@ async fn main(_spawner: Spawner) {
         // 8. Render VU meter
         let vu_x_start = 50;
         let vu_width = WIDTH_I - 70;
-        fill_rect(fb, vu_x_start, VU_TOP, vu_width, VU_HEIGHT, rgb565(15, 15, 15));
+        fill_rect(
+            fb,
+            vu_x_start,
+            VU_TOP,
+            vu_width,
+            VU_HEIGHT,
+            rgb565(15, 15, 15),
+        );
 
         let vu_fill = (vu_level * vu_width as f32) as i32;
         // VU gradient: green → yellow → red
@@ -549,7 +574,13 @@ async fn main(_spawner: Spawner) {
         // VU border
         let border_color = rgb565(80, 80, 80);
         hline(fb, vu_x_start, vu_x_start + vu_width, VU_TOP, border_color);
-        hline(fb, vu_x_start, vu_x_start + vu_width, VU_TOP + VU_HEIGHT - 1, border_color);
+        hline(
+            fb,
+            vu_x_start,
+            vu_x_start + vu_width,
+            VU_TOP + VU_HEIGHT - 1,
+            border_color,
+        );
 
         // 9. Send frame to display
         display.write_frame(fb).await.unwrap();

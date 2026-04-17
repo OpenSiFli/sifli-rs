@@ -121,7 +121,7 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
         </tr>
         <tr>
             <td>Complementary PWM, Input etc.</td>
-            <td>📝</td><td></td><td></td>
+            <td></td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="4"><strong>USART</strong></td>
@@ -141,6 +141,19 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
             <td>❓</td><td></td><td></td>
         </tr>
         <tr>
+            <td rowspan="3"><strong>I2C</strong></td>
+            <td>Blocking</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Interrupt ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>DMA ➕</td>
+            <td></td><td></td><td></td>
+        </tr>
+        <tr>
             <td rowspan="3"><strong>DMA</strong></td>
             <td>Transfer(P2M, M2P, M2M)</td>
             <td>✅</td><td></td><td></td>
@@ -153,7 +166,7 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
             <td>ExtDMA</td><td></td><td></td><td></td>
         </tr>
         <tr>
-            <td rowspan="3"><strong>Bluetooth</strong></td>
+            <td rowspan="3"><strong><a href="../sifli-radio">Bluetooth</a></strong></td>
             <td>RF Calibration</td>
             <td>✅</td><td></td><td></td>
         </tr>
@@ -163,7 +176,7 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
         </tr>
         <tr>
             <td>Classic Bluetooth</td>
-            <td>📝</td><td></td><td></td>
+            <td></td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="3"><strong>USB<br>(see also:<a href="https://github.com/decaday/musb">musb</a>)</strong></td>
@@ -257,19 +270,18 @@ Rust Hardware Abstraction Layer (HAL) and [Embassy](https://github.com/embassy-r
         </tr>
         <tr>
             <td rowspan="4"><strong>Audio</strong></td>
-            <td>AudCodec/ADC, DAC</td><td></td><td></td><td></td>
+            <td>AudCodec/ADC, DAC</td>
+            <td>✅</td><td></td><td></td>
         </tr>
         <tr>
-            <td>AudPrc/Channel, Mixer, Volume</td><td></td><td></td><td></td>
+            <td>AudPrc/Channel, Mixer, Volume</td>
+            <td>🌗</td><td></td><td></td>
         </tr>
         <tr>
             <td>I2S/DMA, Master, Slave</td><td></td><td></td><td></td>
         </tr>
         <tr>
             <td>PDM</td><td></td><td></td><td></td>
-        </tr>
-        <tr>
-            <td colspan="2"><strong>I2C</strong></td><td></td><td></td><td></td>
         </tr>
         <tr>
             <td colspan="2"><strong>SPI</strong></td><td></td><td></td><td></td>
@@ -295,8 +307,6 @@ A simple SF32LB52x+slint+lcdc qspi+co5300 AMOLED example can be found [here](htt
 
 - `sf32lb52x`: Target chip selection. Currently, only `sf32lb52x` is supported.
 
-- `usb`: USB support.
-
 - `set-msplim`: Set the MSPLIM register in `__pre_init`. This register must be set before the main function’s stack setup (since the bootloader may have already configured it to a different value), otherwise, it will cause a HardFault [SiFli-SDK #32](https://github.com/OpenSiFli/SiFli-SDK/issues/32).
 
   This feature will be removed after [cortex-m-rt #580](https://github.com/rust-embedded/cortex-m/pull/580)  is released.
@@ -305,11 +315,7 @@ A simple SF32LB52x+slint+lcdc qspi+co5300 AMOLED example can be found [here](htt
 
 - `unchecked-overclocking`: Enable this feature to disable the overclocking check. DO NOT ENABLE THIS FEATURE UNLESS YOU KNOW WHAT YOU'RE DOING.
 
-- `sf32lb52x-lcpu`: Select SF32LB52x LCPU.
-
-- `edr-cal`: Enable EDR LO 3GHz calibration (VCO3G + OSLO). Only needed for BR/EDR (classic Bluetooth). BLE-only applications can skip this for faster boot.
-
-- `bt-hci`: Enable bt-hci transport layer for IPC HCI communication.
+For Bluetooth-related features (`sf32lb52x-lcpu`, `edr`, etc.), see [sifli-radio](../sifli-radio).
 
 ## License
 

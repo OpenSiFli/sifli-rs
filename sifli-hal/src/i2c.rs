@@ -30,10 +30,10 @@
 
 use core::future::poll_fn;
 use core::marker::PhantomData;
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 use core::task::Poll;
 
-use embassy_hal_internal::{into_ref, PeripheralRef};
+use embassy_hal_internal::{PeripheralRef, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 use embassy_time::{Duration, Instant};
 
@@ -42,7 +42,7 @@ use crate::interrupt::typelevel::Interrupt as _;
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac::i2c::I2c as Regs;
 use crate::time::Hertz;
-use crate::{interrupt, rcc, Peripheral};
+use crate::{Peripheral, interrupt, rcc};
 
 /// I2C error
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -861,7 +861,7 @@ fn clear_all_flags(regs: Regs) {
 fn compute_timing(i2c_clk: Hertz, target: Hertz) -> (u16, u8) {
     let dnf = 0u32;
     let target_hz = if target.0 == 0 { 1 } else { target.0 };
-    let flv = ((i2c_clk.0 + (target_hz / 2)) / target_hz - dnf - 7 + 1) / 2;
+    let flv = ((i2c_clk.0 + (target_hz / 2)) / target_hz - dnf - 7).div_ceil(2);
     let flv = flv.min(0x1FF);
 
     let cnt = flv / 2;
@@ -877,9 +877,9 @@ impl embedded_hal_1::i2c::Error for Error {
         match *self {
             Error::Bus => embedded_hal_1::i2c::ErrorKind::Bus,
             Error::Arbitration => embedded_hal_1::i2c::ErrorKind::ArbitrationLoss,
-            Error::Nack => {
-                embedded_hal_1::i2c::ErrorKind::NoAcknowledge(embedded_hal_1::i2c::NoAcknowledgeSource::Unknown)
-            }
+            Error::Nack => embedded_hal_1::i2c::ErrorKind::NoAcknowledge(
+                embedded_hal_1::i2c::NoAcknowledgeSource::Unknown,
+            ),
             Error::Overrun => embedded_hal_1::i2c::ErrorKind::Overrun,
             _ => embedded_hal_1::i2c::ErrorKind::Other,
         }
@@ -1132,7 +1132,9 @@ impl State {
 }
 
 #[allow(private_interfaces)]
-pub(crate) trait SealedInstance: crate::rcc::RccEnableReset + crate::rcc::RccGetFreq {
+pub(crate) trait SealedInstance:
+    crate::rcc::RccEnableReset + crate::rcc::RccGetFreq
+{
     fn regs() -> Regs;
     fn state() -> &'static State;
 }

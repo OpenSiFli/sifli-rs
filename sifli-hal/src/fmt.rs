@@ -19,7 +19,7 @@ compile_error!("You may not enable both `defmt` and `log` features.");
 /// (e.g., DLL not configured) should use `::core::panic!` directly.
 #[collapse_debuginfo(yes)]
 macro_rules! const_rcc_assert {
-    ($cond:expr, $msg:literal) => {{
+    ($cond:expr_2021, $msg:literal) => {{
         #[cfg(not(feature = "unchecked-overclocking"))]
         {
             if !$cond {
@@ -166,7 +166,7 @@ macro_rules! panic {
 
 #[collapse_debuginfo(yes)]
 macro_rules! trace {
-    ($s:literal $(, $x:expr)* $(,)?) => {
+    ($s:literal $(, $x:expr_2021)* $(,)?) => {
         {
             #[cfg(feature = "log")]
             ::log::trace!($s $(, $x)*);
@@ -180,7 +180,7 @@ macro_rules! trace {
 
 #[collapse_debuginfo(yes)]
 macro_rules! debug {
-    ($s:literal $(, $x:expr)* $(,)?) => {
+    ($s:literal $(, $x:expr_2021)* $(,)?) => {
         {
             #[cfg(feature = "log")]
             ::log::debug!($s $(, $x)*);
@@ -194,7 +194,7 @@ macro_rules! debug {
 
 #[collapse_debuginfo(yes)]
 macro_rules! info {
-    ($s:literal $(, $x:expr)* $(,)?) => {
+    ($s:literal $(, $x:expr_2021)* $(,)?) => {
         {
             #[cfg(feature = "log")]
             ::log::info!($s $(, $x)*);
@@ -208,7 +208,7 @@ macro_rules! info {
 
 #[collapse_debuginfo(yes)]
 macro_rules! warn {
-    ($s:literal $(, $x:expr)* $(,)?) => {
+    ($s:literal $(, $x:expr_2021)* $(,)?) => {
         {
             #[cfg(feature = "log")]
             ::log::warn!($s $(, $x)*);
@@ -222,7 +222,7 @@ macro_rules! warn {
 
 #[collapse_debuginfo(yes)]
 macro_rules! error {
-    ($s:literal $(, $x:expr)* $(,)?) => {
+    ($s:literal $(, $x:expr_2021)* $(,)?) => {
         {
             #[cfg(feature = "log")]
             ::log::error!($s $(, $x)*);

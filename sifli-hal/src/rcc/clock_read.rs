@@ -3,8 +3,8 @@
 //! These functions read the current clock frequencies directly from hardware registers.
 
 use super::{
-    Clocks, Mpisel, Sysclk, Usbsel, Wdtsel, CLK_HRC48_FREQ, CLK_HXT48_FREQ, CLK_LRC10_FREQ,
-    CLK_LRC32_FREQ,
+    CLK_HRC48_FREQ, CLK_HXT48_FREQ, CLK_LRC10_FREQ, CLK_LRC32_FREQ, Clocks, Mpisel, Sysclk, Usbsel,
+    Wdtsel,
 };
 use crate::pac::hpsys_rcc::vals::mux::Perisel;
 use crate::pac::{HPSYS_AON, HPSYS_RCC, PMUC};

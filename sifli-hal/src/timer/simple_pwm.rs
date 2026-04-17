@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
-use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 
 use super::low_level::{CountingMode, OutputCompareMode, Timer};
 use super::{Ch1, Ch2, Ch3, Ch4, Channel, GptimInstance, TimerChannel};

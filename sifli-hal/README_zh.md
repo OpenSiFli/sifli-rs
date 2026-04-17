@@ -120,7 +120,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td>Complementary PWM, Input etc.</td>
-            <td>📝</td><td></td><td></td>
+            <td></td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="4"><strong>USART</strong></td>
@@ -138,6 +138,19 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         <tr>
             <td>RingBuffered(DMA) ➕</td>
             <td>❓</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td rowspan="3"><strong>I2C</strong></td>
+            <td>Blocking</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>Interrupt ➕</td>
+            <td>✅</td><td></td><td></td>
+        </tr>
+        <tr>
+            <td>DMA ➕</td>
+            <td></td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="3"><strong>DMA</strong></td>
@@ -162,7 +175,7 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td>Classic Bluetooth</td>
-            <td>📝</td><td></td><td></td>
+            <td></td><td></td><td></td>
         </tr>
         <tr>
             <td rowspan="3"><strong>USB<br>(see also:<a href="https://github.com/decaday/musb">musb</a>)</strong></td>
@@ -256,19 +269,18 @@ SiFli MCU的Rust硬件抽象层(HAL)和[Embassy](https://github.com/embassy-rs/e
         </tr>
         <tr>
             <td rowspan="4"><strong>Audio</strong></td>
-            <td>AudCodec/ADC, DAC</td><td></td><td></td><td></td>
+            <td>AudCodec/ADC, DAC</td>
+            <td>✅</td><td></td><td></td>
         </tr>
         <tr>
-            <td>AudPrc/Channel, Mixer, Volume</td><td></td><td></td><td></td>
+            <td>AudPrc/Channel, Mixer, Volume</td>
+            <td>🌗</td><td></td><td></td>
         </tr>
         <tr>
             <td>I2S/DMA, Master, Slave</td><td></td><td></td><td></td>
         </tr>
         <tr>
             <td>PDM</td><td></td><td></td><td></td>
-        </tr>
-        <tr>
-            <td colspan="2"><strong>I2C</strong></td><td></td><td></td><td></td>
         </tr>
         <tr>
             <td colspan="2"><strong>SPI</strong></td><td></td><td></td><td></td>

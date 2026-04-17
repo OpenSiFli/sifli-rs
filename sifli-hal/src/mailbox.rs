@@ -30,7 +30,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::{AtomicU16, Ordering};
 use core::task::Poll;
 
-use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 
 use crate::interrupt;
@@ -65,7 +65,7 @@ static MAILBOX2_CH2_STATE: ChannelState = ChannelState::new();
 
 macro_rules! impl_mailbox_channel {
     // TX channel (MAILBOX1)
-    (tx: $name:ident, $peri:ident, $ch:expr) => {
+    (tx: $name:ident, $peri:ident, $ch:expr_2021) => {
         /// MAILBOX1 TX channel (HCPU → LCPU)
         pub struct $name<'d> {
             _peri: PeripheralRef<'d, peripherals::$peri>,
@@ -126,11 +126,7 @@ macro_rules! impl_mailbox_channel {
             #[inline]
             pub fn try_lock(&mut self) -> Result<(), LockCore> {
                 let exr = crate::pac::MAILBOX1.exr($ch - 1).read();
-                if exr.ex() {
-                    Ok(())
-                } else {
-                    Err(exr.id())
-                }
+                if exr.ex() { Ok(()) } else { Err(exr.id()) }
             }
 
             /// Release hardware mutex
@@ -145,7 +141,7 @@ macro_rules! impl_mailbox_channel {
     };
 
     // RX channel (MAILBOX2) with async support
-    (rx: $name:ident, $peri:ident, $ch:expr, $state:ident, $irq:ident) => {
+    (rx: $name:ident, $peri:ident, $ch:expr_2021, $state:ident, $irq:ident) => {
         /// MAILBOX2 RX channel (LCPU → HCPU)
         pub struct $name<'d> {
             _peri: PeripheralRef<'d, peripherals::$peri>,
@@ -206,11 +202,7 @@ macro_rules! impl_mailbox_channel {
             #[inline]
             pub fn try_lock(&mut self) -> Result<(), LockCore> {
                 let exr = crate::pac::MAILBOX2.exr($ch - 1).read();
-                if exr.ex() {
-                    Ok(())
-                } else {
-                    Err(exr.id())
-                }
+                if exr.ex() { Ok(()) } else { Err(exr.id()) }
             }
 
             /// Release hardware mutex

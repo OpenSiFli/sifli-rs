@@ -16,7 +16,7 @@ use embassy_executor::Spawner;
 use embassy_time::Delay;
 use embedded_io::Write as _;
 
-use sifli_hal::aud_pll::{AudioPll, AudPllFreq};
+use sifli_hal::aud_pll::{AudPllFreq, AudioPll};
 use sifli_hal::audio::{self, AudioAdc};
 use sifli_hal::bind_interrupts;
 use sifli_hal::gpio;
@@ -29,11 +29,11 @@ use display_driver::bus::QspiFlashBus;
 use display_driver::panel::reset::LCDResetOption;
 use display_driver::{ColorFormat, DisplayDriver};
 use display_driver_co5300::{
-    spec::{Co5300Spec, PanelSpec},
     Co5300,
+    spec::{Co5300Spec, PanelSpec},
 };
 
-use libm::{cosf, sinf, sqrtf, log10f};
+use libm::{cosf, log10f, sinf, sqrtf};
 
 // ============================================================================
 // Display
@@ -58,7 +58,7 @@ impl Co5300Spec for MyCo5300 {
     const IGNORE_ID_CHECK: bool = true;
 }
 
-#[link_section = ".psram_bss"]
+#[unsafe(link_section = ".psram_bss")]
 static mut FB_BUF: MaybeUninit<[u8; FB_SIZE]> = MaybeUninit::uninit();
 
 bind_interrupts!(struct Irqs {
@@ -133,7 +133,7 @@ fn rgb565(r: u8, g: u8, b: u8) -> u16 {
 
 #[inline(always)]
 fn put(fb: &mut [u8], x: i32, y: i32, c: u16) {
-    if x >= 0 && x < W && y >= 0 && y < H {
+    if (0..W).contains(&x) && (0..H).contains(&y) {
         let off = (y as usize * WIDTH + x as usize) * 2;
         let b = c.to_le_bytes();
         fb[off] = b[0];
@@ -159,8 +159,8 @@ fn fill(fb: &mut [u8], x0: i32, y0: i32, w: i32, h: i32, c: u16) {
 
 /// Draw a line between two points (Bresenham).
 fn line(fb: &mut [u8], x0: i32, y0: i32, x1: i32, y1: i32, c: u16) {
-    let mut dx = (x1 - x0).abs();
-    let mut dy = -(y1 - y0).abs();
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
     let sx: i32 = if x0 < x1 { 1 } else { -1 };
     let sy: i32 = if y0 < y1 { 1 } else { -1 };
     let mut err = dx + dy;
@@ -296,7 +296,15 @@ async fn main(_spawner: Spawner) {
         ..Default::default()
     };
     let lcdc = lcdc::Lcdc::new_qspi(
-        p.LCDC1, Irqs, p.PA2, p.PA3, p.PA4, p.PA5, p.PA6, p.PA7, p.PA8,
+        p.LCDC1,
+        Irqs,
+        p.PA2,
+        p.PA3,
+        p.PA4,
+        p.PA5,
+        p.PA6,
+        p.PA7,
+        p.PA8,
         lcdc_config,
     );
     let bus = QspiFlashBus::new(lcdc);
@@ -320,7 +328,13 @@ async fn main(_spawner: Spawner) {
 
     // ===== Audio init =====
     let pll = AudioPll::new(AudPllFreq::Mhz49_152);
-    let mut adc = AudioAdc::new(p.AUDPRC, p.DMAC1_CH2, &pll, Irqs, audio::AdcConfig::default());
+    let mut adc = AudioAdc::new(
+        p.AUDPRC,
+        p.DMAC1_CH2,
+        &pll,
+        Irqs,
+        audio::AdcConfig::default(),
+    );
     let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUF) };
     let mut stream = adc.start_stream(dma_buf);
     let _ = writeln!(usart, "Ready");
@@ -350,13 +364,17 @@ async fn main(_spawner: Spawner) {
         }
 
         // Periodic debug
-        if frame % 200 == 0 {
+        if frame.is_multiple_of(200) {
             let mut min_l: i16 = i16::MAX;
             let mut max_l: i16 = i16::MIN;
             for &w in audio_buf.iter() {
                 let l = w as i16;
-                if l < min_l { min_l = l; }
-                if l > max_l { max_l = l; }
+                if l < min_l {
+                    min_l = l;
+                }
+                if l > max_l {
+                    max_l = l;
+                }
             }
             let pp = max_l as i32 - min_l as i32;
             let _ = writeln!(usart, "[{:4}] pp={}", frame, pp);
@@ -379,8 +397,12 @@ async fn main(_spawner: Spawner) {
         let mut s_max: i16 = i16::MIN;
         for i in 0..PLOT_W as usize {
             let s = audio_buf[i] as i16;
-            if s < s_min { s_min = s; }
-            if s > s_max { s_max = s; }
+            if s < s_min {
+                s_min = s;
+            }
+            if s > s_max {
+                s_max = s;
+            }
         }
         let range = (s_max as i32 - s_min as i32).max(1);
         // Scale with some headroom
@@ -437,9 +459,8 @@ async fn main(_spawner: Spawner) {
         const DB_CEIL: f32 = 70.0;
         const MAX_BIN: usize = 43; // 8kHz
 
-        let bin_to_x = |bin: usize| -> i32 {
-            MARGIN + ((bin - 1) as i32 * PLOT_W / (MAX_BIN - 1) as i32)
-        };
+        let bin_to_x =
+            |bin: usize| -> i32 { MARGIN + ((bin - 1) as i32 * PLOT_W / (MAX_BIN - 1) as i32) };
         let db_to_y = |db: f32| -> i32 {
             let norm = ((db - DB_FLOOR) / (DB_CEIL - DB_FLOOR)).max(0.0).min(1.0);
             FFT_BOT - (norm * FFT_H as f32) as i32
@@ -479,21 +500,23 @@ async fn main(_spawner: Spawner) {
         // Frequency labels: 0, 2k, 4k, 6k, 8k
         // bin = freq / 187.5 → 2kHz=bin10.7, 4kHz=bin21.3, 6kHz=bin32, 8kHz=bin42.7
         // Each bin = 187.5Hz: bin11=2k, bin21=4k, bin32=6k, bin42=8k
-        let freq_labels: [(usize, &[u8]); 4] = [
-            (1, b"0"), (11, b"2k"), (22, b"4k"), (42, b"8k"),
-        ];
+        let freq_labels: [(usize, &[u8]); 4] = [(1, b"0"), (11, b"2k"), (22, b"4k"), (42, b"8k")];
         for (bin, lt) in freq_labels {
             text(fb, lt, bin_to_x(bin), FFT_BOT + 3, label_color, 1);
         }
 
         // pp display at bottom
-        if frame % 5 == 0 {
+        if frame.is_multiple_of(5) {
             let mut min_l: i16 = i16::MAX;
             let mut max_l: i16 = i16::MIN;
             for i in 0..PLOT_W as usize {
                 let s = audio_buf[i] as i16;
-                if s < min_l { min_l = s; }
-                if s > max_l { max_l = s; }
+                if s < min_l {
+                    min_l = s;
+                }
+                if s > max_l {
+                    max_l = s;
+                }
             }
             let pp = max_l as i32 - min_l as i32;
             // Clear and redraw pp area

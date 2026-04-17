@@ -51,8 +51,8 @@
 //! }
 //! ```
 
-pub(crate) mod codec;
 mod adc;
+pub(crate) mod codec;
 mod dac;
 
 pub use adc::*;

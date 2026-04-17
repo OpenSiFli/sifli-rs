@@ -16,12 +16,12 @@ use sifli_hal::rcc::{ConfigBuilder, Dll, DllStage, Sysclk};
 use sifli_hal::{gpio, lcdc};
 
 use embedded_graphics::{
-    framebuffer::{buffer_size, Framebuffer},
+    framebuffer::{Framebuffer, buffer_size},
     image::{Image, ImageRaw},
-    mono_font::{ascii::FONT_10X20, MonoTextStyle},
+    mono_font::{MonoTextStyle, ascii::FONT_10X20},
     pixelcolor::{
-        raw::{BigEndian, RawU16},
         Rgb565,
+        raw::{BigEndian, RawU16},
     },
     prelude::*,
     text::Text,
@@ -31,8 +31,8 @@ use display_driver::bus::QspiFlashBus;
 use display_driver::panel::reset::LCDResetOption;
 use display_driver::{ColorFormat, DisplayDriver};
 use display_driver_co5300::{
-    spec::{Co5300Spec, PanelSpec},
     Co5300,
+    spec::{Co5300Spec, PanelSpec},
 };
 
 // Note: Although the hardware features a 390x450 display (the standard SiFli bundle), this example

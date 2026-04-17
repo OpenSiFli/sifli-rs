@@ -7,7 +7,7 @@
 //! - **Streaming**: [`start_stream`](AudioAdc::start_stream) — continuous recording via ring buffer
 
 use core::marker::PhantomData;
-use embassy_hal_internal::{into_ref, PeripheralRef};
+use embassy_hal_internal::{PeripheralRef, into_ref};
 
 use super::codec;
 use super::{AdcConfig, ChannelMode, Error, RxCh0Dma};
@@ -15,7 +15,7 @@ use crate::aud_pll::AudioPll;
 use crate::dma::{ChannelAndRequest, ReadableRingBuffer, TransferOptions};
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac;
-use crate::{rcc, Peripheral};
+use crate::{Peripheral, rcc};
 
 fn audprc() -> pac::audprc::Audprc {
     pac::AUDPRC
@@ -46,8 +46,10 @@ fn rx_ch0_disable() {
 /// # Safety
 /// The caller must ensure the address and size are valid.
 unsafe fn invalidate_dcache(addr: usize, size: usize) {
-    let mut scb = cortex_m::Peripherals::steal().SCB;
-    scb.invalidate_dcache_by_address(addr, size);
+    unsafe {
+        let mut scb = cortex_m::Peripherals::steal().SCB;
+        scb.invalidate_dcache_by_address(addr, size);
+    }
 }
 
 /// Audio ADC driver.
@@ -99,9 +101,7 @@ impl<'d> AudioAdc<'d, Blocking> {
     ///
     /// `buf` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn read_blocking(&mut self, buf: &mut [u32]) {
-        audprc()
-            .rx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().rx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let transfer = unsafe {
             self.rx_dma
@@ -113,10 +113,7 @@ impl<'d> AudioAdc<'d, Blocking> {
         rx_ch0_disable();
 
         unsafe {
-            invalidate_dcache(
-                buf.as_ptr() as usize,
-                buf.len() * core::mem::size_of::<u32>(),
-            );
+            invalidate_dcache(buf.as_ptr() as usize, core::mem::size_of_val(buf));
         }
     }
 }
@@ -134,9 +131,9 @@ impl<'d> AudioAdc<'d, Async> {
         rx_dma: impl Peripheral<P = impl RxCh0Dma<crate::peripherals::AUDPRC>> + 'd,
         pll: &'d AudioPll,
         _irq: impl crate::interrupt::typelevel::Binding<
-                crate::interrupt::typelevel::AUDPRC,
-                super::InterruptHandler,
-            > + 'd,
+            crate::interrupt::typelevel::AUDPRC,
+            super::InterruptHandler,
+        > + 'd,
         config: AdcConfig,
     ) -> Self {
         pll.assert_compatible(config.sample_rate);
@@ -164,9 +161,7 @@ impl<'d> AudioAdc<'d, Async> {
     ///
     /// `buf` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub async fn read(&mut self, buf: &mut [u32]) -> Result<(), Error> {
-        audprc()
-            .rx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().rx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let transfer = unsafe {
             self.rx_dma
@@ -178,10 +173,7 @@ impl<'d> AudioAdc<'d, Async> {
         rx_ch0_disable();
 
         unsafe {
-            invalidate_dcache(
-                buf.as_ptr() as usize,
-                buf.len() * core::mem::size_of::<u32>(),
-            );
+            invalidate_dcache(buf.as_ptr() as usize, core::mem::size_of_val(buf));
         }
 
         Ok(())
@@ -195,13 +187,8 @@ impl<'d> AudioAdc<'d, Async> {
     ///
     /// `dma_buf` **must** be in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     /// Recommended size: `2 * (sample_rate / 10)` for ~100ms per half-buffer.
-    pub fn start_stream<'buf>(
-        &'buf mut self,
-        dma_buf: &'buf mut [u32],
-    ) -> AudioInputStream<'buf> {
-        audprc()
-            .rx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+    pub fn start_stream<'buf>(&'buf mut self, dma_buf: &'buf mut [u32]) -> AudioInputStream<'buf> {
+        audprc().rx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let mut ring = unsafe {
             ReadableRingBuffer::new(
@@ -250,9 +237,7 @@ impl<'d, M: Mode> AudioAdc<'d, M> {
             w.set_stb_clk_sel(config.sample_rate.stb_clk_sel());
             w.set_auto_gate_en(true);
         });
-        audprc
-            .cfg()
-            .modify(|w| w.set_audclk_div_update(true));
+        audprc.cfg().modify(|w| w.set_audclk_div_update(true));
 
         // Strobe divider
         audprc.stb().modify(|w| {

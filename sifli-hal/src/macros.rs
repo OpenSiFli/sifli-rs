@@ -1,7 +1,7 @@
 #![macro_use]
 
 macro_rules! new_pin {
-    ($name:ident, $af_type:expr) => {{
+    ($name:ident, $af_type:expr_2021) => {{
         let pin = $name.into_ref();
         pin.set_function(pin.fsel(), $af_type);
         pin.set_cfg_pin();
@@ -10,7 +10,7 @@ macro_rules! new_pin {
 }
 
 macro_rules! init_pin {
-    ($name:ident, $af_type:expr) => {{
+    ($name:ident, $af_type:expr_2021) => {{
         let pin = $name.into_ref();
         pin.set_function(pin.fsel(), $af_type);
         pin.set_cfg_pin();
@@ -42,7 +42,7 @@ macro_rules! dma_trait {
 
 #[allow(unused)]
 macro_rules! dma_trait_impl {
-    (crate::$mod:ident::$trait:ident$(<$mode:ident>)?, $instance:ident, $channel:ident, $request:expr) => {
+    (crate::$mod:ident::$trait:ident$(<$mode:ident>)?, $instance:ident, $channel:ident, $request:expr_2021) => {
         impl crate::$mod::$trait<crate::peripherals::$instance $(, crate::$mod::$mode)?> for crate::peripherals::$channel {
             fn request(&self) -> crate::dma::Request {
                 $request

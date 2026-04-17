@@ -17,6 +17,7 @@ use rwbt::rfc::sifli::regs::{
     rbb_reg3, rbb_reg5, rf_lodist_reg, rrf_reg, tbb_reg, trf_edr_reg1, trf_edr_reg2, trf_reg1,
     trf_reg2, vco_reg1, vco_reg2,
 };
+use sifli_hal::ram::RamSlice;
 
 /// Build the RXON command sequence (BLE RX startup).
 fn build_rxon() -> CmdBuilder {
@@ -400,8 +401,8 @@ fn build_txoff() -> CmdBuilder {
     c.push(cmd::rd(reg::FBDV_REG1));
     c.push(cmd::and(fbdv_reg1::BRF_FBDV_EN_LV));
     c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1)); // bit 5
-    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV));     // bit 4
-    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV));       // bit 3
+    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV)); // bit 4
+    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV)); // bit 3
     c.push(cmd::wr(reg::FBDV_REG1));
 
     // ACAL_VH_SEL=3/ACAL_VL_SEL=1 (clear bit2, clear bit6)
@@ -467,16 +468,16 @@ fn build_bt_txon() -> CmdBuilder {
     // PFDCP_EN, ICP_SET (set bit 11, clear bit 13)
     c.push(cmd::rd(reg::PFDCP_REG));
     c.push(cmd::or(pfdcp_reg::BRF_PFDCP_EN_LV));
-    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV));      // bit 11
-    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2));  // bit 13
+    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV)); // bit 11
+    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2)); // bit 13
     c.push(cmd::wr(reg::PFDCP_REG));
 
     // FBDV_EN/MOD_STG/SDM_CLK_SEL (3G mode: MOD_STG=1, SDM_CLK_SEL=0)
     c.push(cmd::rd(reg::FBDV_REG1));
     c.push(cmd::or(fbdv_reg1::BRF_FBDV_EN_LV));
-    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1));  // bit 5
-    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV));       // bit 4
-    c.push(cmd::and(fbdv_reg1::BRF_SDM_CLK_SEL_LV));        // bit 3
+    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1)); // bit 5
+    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV)); // bit 4
+    c.push(cmd::and(fbdv_reg1::BRF_SDM_CLK_SEL_LV)); // bit 3
     c.push(cmd::wr(reg::FBDV_REG1));
 
     // FBDV_RSTB (clear)
@@ -486,8 +487,8 @@ fn build_bt_txon() -> CmdBuilder {
 
     // ACAL_VH_SEL=7/ACAL_VL_SEL=5 (set bit 2, set bit 6)
     c.push(cmd::rd(reg::VCO_REG2));
-    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VL_SEL_LV + 2));  // bit 2
-    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VH_SEL_LV + 2));  // bit 6
+    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VL_SEL_LV + 2)); // bit 2
+    c.push(cmd::or(vco_reg2::BRF_VCO_ACAL_VH_SEL_LV + 2)); // bit 6
     c.push(cmd::wr(reg::VCO_REG2));
 
     // EDR_VCO_FLT_EN
@@ -678,16 +679,16 @@ fn build_bt_txoff() -> CmdBuilder {
     // EDR PFDCP_EN (clear), ICP_SET (clear bit 11, set bit 13)
     c.push(cmd::rd(reg::PFDCP_REG));
     c.push(cmd::and(pfdcp_reg::BRF_PFDCP_EN_LV));
-    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV));      // bit 11
-    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2));   // bit 13
+    c.push(cmd::and(pfdcp_reg::BRF_PFDCP_ICP_SET_LV)); // bit 11
+    c.push(cmd::or(pfdcp_reg::BRF_PFDCP_ICP_SET_LV + 2)); // bit 13
     c.push(cmd::wr(reg::PFDCP_REG));
 
     // EDR FBDV_EN(clear)/MOD_STG(restore 5G: MOD_STG=2, SDM_CLK_SEL=1)
     c.push(cmd::rd(reg::FBDV_REG1));
     c.push(cmd::and(fbdv_reg1::BRF_FBDV_EN_LV));
-    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1));  // bit 5
-    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV));      // bit 4
-    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV));        // bit 3
+    c.push(cmd::or(fbdv_reg1::BRF_FBDV_MOD_STG_LV + 1)); // bit 5
+    c.push(cmd::and(fbdv_reg1::BRF_FBDV_MOD_STG_LV)); // bit 4
+    c.push(cmd::or(fbdv_reg1::BRF_SDM_CLK_SEL_LV)); // bit 3
     c.push(cmd::wr(reg::FBDV_REG1));
 
     // ACAL_VH_SEL=3/ACAL_VL_SEL=1 (clear bit 2, clear bit 6)
@@ -767,6 +768,16 @@ fn init_inccal_timing() {
     });
 }
 
+/// Write packed RFC commands to a `RamSlice` at the given byte offset.
+///
+/// Returns the next available byte offset after the written commands.
+fn write_cmd(region: &RamSlice, cmd: &CmdBuilder, offset: u32) -> u32 {
+    for i in 0..cmd.packed_word_count() {
+        region.write::<u32>((offset as usize) + i * 4, cmd.packed_word(i));
+    }
+    offset + cmd.byte_len() as u32
+}
+
 /// Generate all RFC command sequences and write them to RFC SRAM.
 ///
 /// This is the core function that makes BLE TX/RX work. It:
@@ -778,9 +789,7 @@ fn init_inccal_timing() {
 /// Must be called after `reset_bluetooth_rf()` and the basic `rfc_init()`.
 ///
 /// Returns the next free SRAM offset after all sequences.
-pub fn generate_rfc_cmd_sequences() -> u32 {
-    let base = super::BT_RFC_MEM_BASE;
-
+pub fn generate_rfc_cmd_sequences(sram: &RamSlice) -> u32 {
     // Initialize INCCAL timing
     init_inccal_timing();
 
@@ -793,7 +802,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg1().write(|w| {
         w.set_rxon_cfg_addr(rxon_addr as u16);
     });
-    addr = unsafe { rxon.write_to_sram(base, rxon_addr) };
+    addr = write_cmd(sram, &rxon, rxon_addr);
 
     // === RXOFF ===
     let rxoff = build_rxoff();
@@ -801,7 +810,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg1().modify(|w| {
         w.set_rxoff_cfg_addr(rxoff_addr as u16);
     });
-    addr = unsafe { rxoff.write_to_sram(base, rxoff_addr) };
+    addr = write_cmd(sram, &rxoff, rxoff_addr);
 
     // === TXON ===
     let txon = build_txon();
@@ -809,7 +818,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg2().write(|w| {
         w.set_txon_cfg_addr(txon_addr as u16);
     });
-    addr = unsafe { txon.write_to_sram(base, txon_addr) };
+    addr = write_cmd(sram, &txon, txon_addr);
 
     // === TXOFF ===
     let txoff = build_txoff();
@@ -817,7 +826,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg2().modify(|w| {
         w.set_txoff_cfg_addr(txoff_addr as u16);
     });
-    addr = unsafe { txoff.write_to_sram(base, txoff_addr) };
+    addr = write_cmd(sram, &txoff, txoff_addr);
 
     // === BT_TXON ===
     let bt_txon = build_bt_txon();
@@ -825,7 +834,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg3().write(|w| {
         w.set_bt_txon_cfg_addr(bt_txon_addr as u16);
     });
-    addr = unsafe { bt_txon.write_to_sram(base, bt_txon_addr) };
+    addr = write_cmd(sram, &bt_txon, bt_txon_addr);
 
     // === BT_TXOFF ===
     let bt_txoff = build_bt_txoff();
@@ -833,7 +842,7 @@ pub fn generate_rfc_cmd_sequences() -> u32 {
     BT_RFC.cu_addr_reg3().modify(|w| {
         w.set_bt_txoff_cfg_addr(bt_txoff_addr as u16);
     });
-    addr = unsafe { bt_txoff.write_to_sram(base, bt_txoff_addr) };
+    addr = write_cmd(sram, &bt_txoff, bt_txoff_addr);
 
     addr
 }

@@ -8,7 +8,6 @@ const MAGIC: u32 = 0x53454346;
 #[cfg(test)]
 const CORE_MAX: usize = 4;
 
-
 #[repr(C)]
 pub(crate) struct SecConfiguration {
     pub(crate) magic: u32,
@@ -16,7 +15,8 @@ pub(crate) struct SecConfiguration {
     pub(crate) sig_pub_key: [u8; DFU_SIG_KEY_SIZE],
 
     // Align to sector boundary (4096)
-    pub(crate) reserved: [u8; 4096 - (4 + DFU_FLASH_PARTITION * size_of::<FlashTable>() + DFU_SIG_KEY_SIZE)],
+    pub(crate) reserved:
+        [u8; 4096 - (4 + DFU_FLASH_PARTITION * size_of::<FlashTable>() + DFU_SIG_KEY_SIZE)],
 
     pub(crate) imgs: Imgs,
     pub(crate) running_imgs: RunningImgs,
@@ -91,7 +91,6 @@ pub(crate) struct Imgs {
     pub(crate) reserved: ImageHeaderEnc,
     /// Reservd?
     pub(crate) single: ImageHeaderEnc,
-    
 }
 
 // accroding to https://github.com/OpenSiFli/SiFli-SDK/issues/10#issuecomment-2614345184
@@ -158,7 +157,8 @@ impl Default for SecConfiguration {
             magic: MAGIC,
             ftab: FlashTables::default(),
             sig_pub_key: [0; DFU_SIG_KEY_SIZE],
-            reserved: [0; 4096 - (4 + DFU_FLASH_PARTITION * size_of::<FlashTable>() + DFU_SIG_KEY_SIZE)],
+            reserved: [0; 4096
+                - (4 + DFU_FLASH_PARTITION * size_of::<FlashTable>() + DFU_SIG_KEY_SIZE)],
             imgs: Imgs::default(),
             running_imgs: RunningImgs::default(),
         }
@@ -174,31 +174,16 @@ mod tests {
     fn validate_struct_sizes() {
         assert_eq!(size_of::<FlashTable>(), 16);
 
-        assert_eq!(
-            size_of::<FlashTables>(),
-            16 * size_of::<FlashTable>()
-        );
+        assert_eq!(size_of::<FlashTables>(), 16 * size_of::<FlashTable>());
 
-        assert_eq!(
-            offset_of!(SecConfiguration, imgs),
-            4096
-        );
+        assert_eq!(offset_of!(SecConfiguration, imgs), 4096);
 
         assert_eq!(size_of::<ImageHeaderEnc>(), 512);
 
-        assert_eq!(
-            size_of::<Imgs>(),
-            512 * ( DFU_FLASH_PARTITION - 2)
-        );
+        assert_eq!(size_of::<Imgs>(), 512 * (DFU_FLASH_PARTITION - 2));
 
-        assert_eq!(
-            size_of::<RunningImgs>(),
-            CORE_MAX * 4
-        );
+        assert_eq!(size_of::<RunningImgs>(), CORE_MAX * 4);
 
-        assert_eq!(
-            size_of::<SecConfiguration>(),
-            0x2c10
-        )
+        assert_eq!(size_of::<SecConfiguration>(), 0x2c10)
     }
 }

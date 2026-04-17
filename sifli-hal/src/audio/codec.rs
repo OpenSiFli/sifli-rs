@@ -190,9 +190,7 @@ pub(crate) fn init_codec_adc(volume: u8) {
     // ===== MICBIAS enable =====
     codec.bg_cfg0().modify(|w| w.set_en_smpl(false));
     codec.adc_ana_cfg().modify(|w| w.set_micbias_en(true));
-    codec
-        .adc_ana_cfg()
-        .modify(|w| w.set_micbias_chop_en(false));
+    codec.adc_ana_cfg().modify(|w| w.set_micbias_chop_en(false));
     crate::blocking_delay_us(2_000);
     codec.bg_cfg0().modify(|w| w.set_en_smpl(true));
 

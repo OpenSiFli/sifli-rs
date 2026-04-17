@@ -8,7 +8,7 @@
 //! - **Streaming**: [`start_stream`](AudioDac::start_stream) — continuous feed via ring buffer
 
 use core::marker::PhantomData;
-use embassy_hal_internal::{into_ref, PeripheralRef};
+use embassy_hal_internal::{PeripheralRef, into_ref};
 
 use super::codec;
 use super::{ChannelMode, DacConfig, Error, TxCh0Dma};
@@ -16,7 +16,7 @@ use crate::aud_pll::AudioPll;
 use crate::dma::{ChannelAndRequest, Transfer, TransferOptions, WritableRingBuffer};
 use crate::mode::{Async, Blocking, Mode};
 use crate::pac;
-use crate::{rcc, Peripheral};
+use crate::{Peripheral, rcc};
 
 fn audprc() -> pac::audprc::Audprc {
     pac::AUDPRC
@@ -47,8 +47,10 @@ fn tx_ch0_disable() {
 /// # Safety
 /// The caller must ensure the address and size are valid.
 unsafe fn clean_dcache(addr: usize, size: usize) {
-    let mut scb = cortex_m::Peripherals::steal().SCB;
-    scb.clean_dcache_by_address(addr, size);
+    unsafe {
+        let mut scb = cortex_m::Peripherals::steal().SCB;
+        scb.clean_dcache_by_address(addr, size);
+    }
 }
 
 /// Audio DAC driver.
@@ -103,15 +105,10 @@ impl<'d> AudioDac<'d, Blocking> {
     /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub fn write_blocking(&mut self, samples: &[u32]) {
         unsafe {
-            clean_dcache(
-                samples.as_ptr() as usize,
-                samples.len() * core::mem::size_of::<u32>(),
-            );
+            clean_dcache(samples.as_ptr() as usize, core::mem::size_of_val(samples));
         }
 
-        audprc()
-            .tx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let transfer = unsafe {
             self.tx_dma
@@ -130,20 +127,12 @@ impl<'d> AudioDac<'d, Blocking> {
     ///
     /// D-Cache is automatically cleaned before the DMA transfer.
     /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
-    pub fn start_circular<'buf>(
-        &'buf mut self,
-        samples: &'buf [u32],
-    ) -> CircularPlayback<'buf> {
+    pub fn start_circular<'buf>(&'buf mut self, samples: &'buf [u32]) -> CircularPlayback<'buf> {
         unsafe {
-            clean_dcache(
-                samples.as_ptr() as usize,
-                samples.len() * core::mem::size_of::<u32>(),
-            );
+            clean_dcache(samples.as_ptr() as usize, core::mem::size_of_val(samples));
         }
 
-        audprc()
-            .tx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let mut opts = TransferOptions::default();
         opts.circular = true;
@@ -181,9 +170,9 @@ impl<'d> AudioDac<'d, Async> {
         tx_dma: impl Peripheral<P = impl TxCh0Dma<crate::peripherals::AUDPRC>> + 'd,
         pll: &'d AudioPll,
         _irq: impl crate::interrupt::typelevel::Binding<
-                crate::interrupt::typelevel::AUDPRC,
-                InterruptHandler,
-            > + 'd,
+            crate::interrupt::typelevel::AUDPRC,
+            InterruptHandler,
+        > + 'd,
         config: DacConfig,
     ) -> Self {
         pll.assert_compatible(config.sample_rate);
@@ -216,15 +205,10 @@ impl<'d> AudioDac<'d, Async> {
     /// `samples` must reside in SRAM — DMAC1 cannot access PSRAM (0x60000000).
     pub async fn write(&mut self, samples: &[u32]) -> Result<(), Error> {
         unsafe {
-            clean_dcache(
-                samples.as_ptr() as usize,
-                samples.len() * core::mem::size_of::<u32>(),
-            );
+            clean_dcache(samples.as_ptr() as usize, core::mem::size_of_val(samples));
         }
 
-        audprc()
-            .tx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let transfer = unsafe {
             self.tx_dma
@@ -248,16 +232,11 @@ impl<'d> AudioDac<'d, Async> {
     /// Recommended size: `2 * (sample_rate / 10)` for ~100ms per half-buffer.
     ///
     /// The stream is automatically started; begin writing data immediately.
-    pub fn start_stream<'buf>(
-        &'buf mut self,
-        dma_buf: &'buf mut [u32],
-    ) -> AudioStream<'buf> {
+    pub fn start_stream<'buf>(&'buf mut self, dma_buf: &'buf mut [u32]) -> AudioStream<'buf> {
         // Zero the DMA buffer to avoid playing garbage before first write().
         dma_buf.fill(0);
 
-        audprc()
-            .tx_ch0_cfg()
-            .modify(|w| w.set_dma_msk(true));
+        audprc().tx_ch0_cfg().modify(|w| w.set_dma_msk(true));
 
         let mut ring = unsafe {
             WritableRingBuffer::new(
@@ -306,9 +285,7 @@ impl<'d, M: Mode> AudioDac<'d, M> {
             w.set_stb_clk_sel(config.sample_rate.stb_clk_sel());
             w.set_auto_gate_en(true);
         });
-        audprc
-            .cfg()
-            .modify(|w| w.set_audclk_div_update(true));
+        audprc.cfg().modify(|w| w.set_audclk_div_update(true));
 
         // Strobe divider
         let dac_div = config.sample_rate.dac_div();
@@ -349,9 +326,7 @@ impl<'d, M: Mode> AudioDac<'d, M> {
             crate::blocking_delay_us(1);
             timeout -= 1;
         }
-        audprc
-            .dac_path_cfg1()
-            .modify(|w| w.set_src_ch_clr(0));
+        audprc.dac_path_cfg1().modify(|w| w.set_src_ch_clr(0));
 
         // TX_CH0: 16-bit, stereo/mono, DMA masked until playback starts
         let stereo = matches!(config.channel_mode, ChannelMode::Stereo);
@@ -457,10 +432,7 @@ impl<'a> AudioStream<'a> {
     ///
     /// Returns the remaining free space in the ring buffer.
     pub async fn write(&mut self, samples: &[u32]) -> Result<usize, Error> {
-        self.ring
-            .write_exact(samples)
-            .await
-            .map_err(|_| Error::Dma)
+        self.ring.write_exact(samples).await.map_err(|_| Error::Dma)
     }
 
     /// Stop streaming gracefully, draining remaining buffered data.

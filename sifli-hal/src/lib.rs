@@ -14,8 +14,6 @@ mod utils;
 pub mod adc;
 pub mod aud_pll;
 pub mod audio;
-#[cfg(feature = "bt-hci")]
-pub mod bt_hci;
 #[allow(clippy::all)] // modified from embassy-stm32
 pub mod dma;
 pub mod efuse;
@@ -26,6 +24,7 @@ pub mod ipc;
 pub mod lcdc;
 pub mod lcpu;
 pub(crate) mod lpaon;
+pub mod ram;
 pub mod mailbox;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 // mpi mod is gated to prevent testing on host failure(there's ramfunc in mpi mod)
@@ -44,7 +43,7 @@ pub mod usart;
 pub mod usb;
 
 // Reexports
-pub use embassy_hal_internal::{into_ref, Peripheral, PeripheralRef};
+pub use embassy_hal_internal::{Peripheral, PeripheralRef, into_ref};
 #[cfg(feature = "unstable-pac")]
 pub use sifli_pac as pac;
 #[cfg(not(feature = "unstable-pac"))]
@@ -174,7 +173,7 @@ pub(crate) mod _generated {
 }
 
 pub use _generated::interrupt;
-pub use _generated::{peripherals, Peripherals};
+pub use _generated::{Peripherals, peripherals};
 
 /// Performs a busy-wait delay for a specified number of microseconds, using the `cortex-m::asm::delay` function.
 pub fn cortex_m_blocking_delay_us(us: u32) {
@@ -242,7 +241,7 @@ macro_rules! bind_interrupts {
 
         $(
             #[allow(non_snake_case)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             $(#[cfg($cond_irq)])?
             unsafe extern "C" fn $irq() {
                 $(

@@ -17,9 +17,17 @@
 //! patch::install(&PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 //! ```
 
-use crate::lcpu::ram::PatchRegion;
+use crate::ram::memory_map::{a3, letter};
+use crate::ram::RamSlice;
 use crate::pac;
-use crate::syscfg;
+use crate::syscfg::ChipRevision;
+
+/// A3 patch record header magic value ("PTCH").
+const A3_PATCH_MAGIC: u32 = 0x5054_4348;
+/// Letter Series patch header magic value ("PACH").
+const LETTER_PATCH_MAGIC: u32 = 0x4843_4150;
+/// Letter Series fixed entry count.
+const LETTER_ENTRY_COUNT: u32 = 7;
 
 //=============================================================================
 // Constants
@@ -125,15 +133,10 @@ pub fn hal_patch_install(record_addr: usize) -> Result<u32, Error> {
     let size_bytes = unsafe { core::ptr::read_unaligned((record_addr + 4) as *const u32) };
 
     // Verify magic tag
-    if tag != PatchRegion::A3_MAGIC {
-        debug!(
-            "Patch record invalid: tag=0x{:08X}, expected=0x{:08X}",
-            tag,
-            PatchRegion::A3_MAGIC
-        );
+    if tag != A3_PATCH_MAGIC {
         return Err(Error::InvalidRecordMagic {
             actual: tag,
-            expected: PatchRegion::A3_MAGIC,
+            expected: A3_PATCH_MAGIC,
         });
     }
 
@@ -143,18 +146,12 @@ pub fn hal_patch_install(record_addr: usize) -> Result<u32, Error> {
         return Err(Error::TooManyEntries { count: entry_count });
     }
 
-    debug!(
-        "HAL_PATCH_install: {} entries from 0x{:08X} (size_bytes={})",
-        entry_count, record_addr, size_bytes
-    );
-
     // Get pointer to entries (after 8-byte header)
     let entries_addr = record_addr + 8;
 
     // Install entries into hardware
     let enabled = hal_patch_install_entries(entries_addr, entry_count)?;
 
-    debug!("PATCH hardware enabled: mask=0x{:08X}", enabled);
     Ok(enabled)
 }
 
@@ -179,7 +176,6 @@ fn hal_patch_install_entries(entries_addr: usize, count: usize) -> Result<u32, E
 
     // Disable all channels first
     patch.cer().write(|w| w.set_ce(0));
-    debug!("  PATCH CER cleared");
 
     for i in 0..count {
         // Read entry using unaligned access (data may not be 4-byte aligned).
@@ -235,7 +231,7 @@ pub fn hal_patch_get_enabled() -> u32 {
 ///
 /// patch::install(&PATCH_LIST_BYTES, &PATCH_BIN_BYTES)?;
 /// ```
-pub fn install(list: &[u8], bin: &[u8]) -> Result<(), Error> {
+pub fn install(rev: ChipRevision, list: &[u8], bin: &[u8]) -> Result<(), Error> {
     // Parameter validation
     if list.is_empty() {
         return Err(Error::EmptyRecord);
@@ -244,19 +240,14 @@ pub fn install(list: &[u8], bin: &[u8]) -> Result<(), Error> {
         return Err(Error::EmptyCode);
     }
 
-    let revision = syscfg::read_idr().revision();
-
-    if !revision.is_valid() {
-        return Err(Error::InvalidRevision {
-            revid: revision.revid(),
-        });
+    if !rev.is_valid() {
+        return Err(Error::InvalidRevision { revid: rev.revid() });
     }
 
     // Dispatch to A3 or Letter-Series patch installer based on revision
-    if revision.is_letter_series() {
-        install_letter(list, bin)
-    } else {
-        install_a3(list, bin)
+    match rev {
+        ChipRevision::A3OrEarlier(_) => install_a3(list, bin),
+        _ => install_letter(list, bin),
     }
 }
 
@@ -268,82 +259,31 @@ pub fn install(list: &[u8], bin: &[u8]) -> Result<(), Error> {
 /// 3. Clear and copy patch code to RAM
 fn install_a3(list: &[u8], bin: &[u8]) -> Result<(), Error> {
     let code_size = bin.len();
-    if code_size > PatchRegion::A3_TOTAL_SIZE {
+    if code_size > a3::PATCH_TOTAL_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
-            max_bytes: PatchRegion::A3_TOTAL_SIZE,
+            max_bytes: a3::PATCH_TOTAL_SIZE,
         });
     }
 
-    debug!(
-        "Installing A3 patch: record={} bytes, code={} bytes",
-        list.len(),
-        code_size
-    );
-
     // Step 1: Copy patch record list to RAM
-    let record_addr = PatchRegion::A3_RECORD_ADDR;
-    // SAFETY: A3_RECORD_ADDR is a valid LCPU RAM address
-    unsafe {
-        core::ptr::copy_nonoverlapping(list.as_ptr(), record_addr as *mut u8, list.len());
-    }
-    debug!(
-        "  Record copied to 0x{:08X} ({} bytes)",
-        record_addr,
-        list.len()
-    );
-
-    // Log first few words of the record for debugging
-    #[cfg(feature = "defmt")]
-    {
-        let record_ptr = record_addr as *const u32;
-        let word0 = unsafe { *record_ptr };
-        let word1 = unsafe { *record_ptr.add(1) };
-        let word2 = unsafe { *record_ptr.add(2) };
-        debug!(
-            "  Record header: [0x{:08X}, 0x{:08X}, 0x{:08X}]",
-            word0, word1, word2
-        );
-    }
+    RamSlice::new(a3::PATCH_RECORD_ADDR, a3::PATCH_RECORD_SIZE).copy_from_slice(list);
 
     // Step 2: Configure PATCH hardware (reads from RAM we just wrote)
-    match hal_patch_install(record_addr) {
-        Ok(mask) => {
-            debug!(
-                "  PATCH HW configured: {} channels enabled",
-                mask.count_ones()
-            );
-        }
+    match hal_patch_install(a3::PATCH_RECORD_ADDR) {
+        Ok(_) => {}
         Err(e) => {
             warn!("  PATCH HW install failed: {:?}", e);
             // Continue anyway - the patch code may still be useful
         }
     }
 
-    // Step 3: Clear patch code area (this will overwrite record, but hardware is already configured)
-    let code_addr = PatchRegion::A3_CODE_START;
-    // SAFETY: A3_CODE_START is a valid LCPU RAM address
-    unsafe {
-        core::ptr::write_bytes(code_addr as *mut u8, 0, PatchRegion::A3_TOTAL_SIZE);
-    }
+    // Step 3+4: Clear patch code area and copy code.
+    // Clear overwrites the record, but hardware is already configured in step 2.
+    let code = RamSlice::new(a3::PATCH_CODE_START, a3::PATCH_TOTAL_SIZE);
+    code.clear();
+    code.copy_from_slice(bin);
 
-    // Step 4: Copy patch code
-    // SAFETY: A3_CODE_START is a valid LCPU RAM address
-    unsafe {
-        core::ptr::copy_nonoverlapping(bin.as_ptr(), code_addr as *mut u8, bin.len());
-    }
-    debug!("  Code copied to 0x{:08X} ({} bytes)", code_addr, bin.len());
-
-    // Log first few words of the code for debugging
-    #[cfg(feature = "defmt")]
-    {
-        let code_ptr = code_addr as *const u32;
-        let word0 = unsafe { *code_ptr };
-        let word1 = unsafe { *code_ptr.add(1) };
-        debug!("  Code start: [0x{:08X}, 0x{:08X}]", word0, word1);
-    }
-
-    debug!("A3 patch installed successfully");
     Ok(())
 }
 
@@ -357,51 +297,28 @@ fn install_a3(list: &[u8], bin: &[u8]) -> Result<(), Error> {
 /// Reference: `lcpu_patch_rev_b.c:lcpu_patch_install_rev_b()` + `bf0_hal_patch.c:HAL_PATCH_install()`
 fn install_letter(list: &[u8], bin: &[u8]) -> Result<(), Error> {
     let code_size = bin.len();
-    if code_size > PatchRegion::LETTER_CODE_SIZE {
+    if code_size > letter::PATCH_CODE_SIZE {
         return Err(Error::CodeTooLarge {
             size_bytes: code_size,
-            max_bytes: PatchRegion::LETTER_CODE_SIZE,
+            max_bytes: letter::PATCH_CODE_SIZE,
         });
     }
 
-    debug!(
-        "Installing Letter Series patch: code={} bytes, list={} bytes",
-        code_size,
-        list.len()
-    );
-
     // Step 0: Clear LCPU code RAM area before patch install.
     // Reference: bf0_lcpu_init.c: memset((void *)0x20400000, 0, 0x500)
-    unsafe {
-        core::ptr::write_bytes(0x2040_0000 as *mut u8, 0, 0x500);
-    }
+    RamSlice::new(crate::ram::memory_map::shared::LPSYS_RAM_BASE, 0x500).clear();
 
     // Step 1: Write PACH header (12 bytes) - for ROM to find patch code entry point.
     // Reference: lcpu_patch_rev_b.c:60-66
-    let header = [
-        PatchRegion::LETTER_MAGIC,                      // magic: "PACH"
-        PatchRegion::LETTER_ENTRY_COUNT,                // entry_count (fixed)
-        PatchRegion::LETTER_CODE_START_LCPU as u32 + 1, // code_addr (LCPU address + Thumb bit)
-    ];
-
-    let header_addr = PatchRegion::LETTER_BUF_START;
-    // SAFETY: LETTER_BUF_START is a valid LCPU RAM address
-    unsafe {
-        core::ptr::copy_nonoverlapping(header.as_ptr(), header_addr as *mut u32, 3);
-    }
-    debug!(
-        "  Header written to 0x{:08X}: magic=0x{:08X}, count={}, entry=0x{:08X}",
-        header_addr, header[0], header[1], header[2]
-    );
+    let patch_buf = RamSlice::new(letter::PATCH_BUF_START, letter::PATCH_BUF_SIZE);
+    patch_buf.write(0, LETTER_PATCH_MAGIC); // magic: "PACH"
+    patch_buf.write(4, LETTER_ENTRY_COUNT); // entry_count (fixed)
+    patch_buf.write(8, letter::PATCH_CODE_START_LCPU as u32 + 1); // code_addr + Thumb bit
 
     // Step 2: Clear patch code area and copy patch binary.
-    let code_addr = PatchRegion::LETTER_CODE_START;
-    // SAFETY: LETTER_CODE_START is a valid LCPU RAM address
-    unsafe {
-        core::ptr::write_bytes(code_addr as *mut u8, 0, PatchRegion::LETTER_CODE_SIZE);
-        core::ptr::copy_nonoverlapping(bin.as_ptr(), code_addr as *mut u8, bin.len());
-    }
-    debug!("  Code copied to 0x{:08X} ({} bytes)", code_addr, bin.len());
+    let code = RamSlice::new(letter::PATCH_CODE_START, letter::PATCH_CODE_SIZE);
+    code.clear();
+    code.copy_from_slice(bin);
 
     // Step 3: Install hardware PATCH entries from list data (PTCH tag + 6 entries).
     // SDK: HAL_PATCH_install() reads from HAL_PATCH_GetEntryAddr() which returns g_lcpu_patch_list.
@@ -409,18 +326,11 @@ fn install_letter(list: &[u8], bin: &[u8]) -> Result<(), Error> {
     // PATCH hardware peripheral to intercept and replace ROM instructions at runtime.
     // Reference: bf0_hal_patch.c:HAL_PATCH_install() -> HAL_PATCH_install2()
     match hal_patch_install(list.as_ptr() as usize) {
-        Ok(mask) => {
-            info!(
-                "  PATCH HW configured: {} channels enabled (mask=0x{:08X})",
-                mask.count_ones(),
-                mask
-            );
-        }
+        Ok(_) => {}
         Err(e) => {
-            warn!("  PATCH HW install failed: {:?}", e);
+            warn!("PATCH HW install failed: {:?}", e);
         }
     }
 
-    info!("Letter Series patch installed successfully");
     Ok(())
 }

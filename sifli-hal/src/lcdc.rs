@@ -1,12 +1,12 @@
 use core::future::poll_fn;
 use core::marker::PhantomData;
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 use core::task::Poll;
 
 use display_driver::bus::ErrorType;
 use display_driver::{DisplayBus, DisplayError};
 
-use embassy_hal_internal::{into_ref, Peripheral};
+use embassy_hal_internal::{Peripheral, into_ref};
 use embassy_sync::waitqueue::AtomicWaker;
 use embassy_time::{Duration, Timer};
 

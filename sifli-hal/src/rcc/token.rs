@@ -2,6 +2,7 @@
 ///
 /// These are zero-sized types used as `RccGetFreq::Clock` associated types
 /// to identify which clock domain a peripheral belongs to.
+
 // TODO: once peripheral drivers start borrowing `&'d Token` at construction,
 // these types can gain `frequency()` methods and be collected into a
 // `ClockControl` struct returned by `init()`, enabling compile-time
