@@ -3,6 +3,7 @@ use core::cmp::min;
 use core::hint::spin_loop;
 
 use super::{Regs, SealedInstance};
+use crate::pac::mpi::regs::{Ar1, Ccr1, Ccr2, Cmdr1, Cmdr2, Cr, Dlr1, Dlr2, Dr, Fifocr, Scr, Smkr, Smr};
 
 pub(super) const FIFO_SIZE_BYTES: usize = 64;
 pub(super) const MAX_DLEN_BYTES: usize = 0x000f_ffff + 1;
@@ -75,6 +76,12 @@ pub(super) fn ram_irq_save_disable() -> u32 {
             options(nomem, nostack, preserves_flags)
         );
         asm!("cpsid i", options(nomem, nostack, preserves_flags));
+        // Drain any in-flight transactions and flush the instruction prefetch
+        // buffer before we start touching MPI registers. Without this, a
+        // speculative fetch from MPI XIP that started before CPSID can land
+        // mid-way through our manual command sequence and wedge the controller.
+        asm!("dsb sy", options(nomem, nostack, preserves_flags));
+        asm!("isb sy", options(nomem, nostack, preserves_flags));
     }
     primask
 }
@@ -121,12 +128,29 @@ pub(super) fn ram_wait_not_busy(regs: Regs, max_polls: u32) -> bool {
     false
 }
 
+// All `.data.ramfunc` helpers below avoid `Reg::modify(|w| ...)` and
+// `Reg::write(|w| ...)`. The compiler is free to keep those closures in
+// `.text` (flash) — when it does, calling them from a RAM-resident MPI
+// code path requires an XIP fetch, defeating the whole point and risking
+// fetching stale/garbage cache lines while a manual command is in flight.
+// Instead, every register update is written as a `read()`/`Default::default()`
+// + setter chain + `write_value()`, all of which inline cleanly into the
+// caller and stay in `.data.ramfunc`.
+
+#[inline(always)]
+fn write_scr_clear(regs: Regs, smfc: bool, tcfc: bool) {
+    let mut v = Scr::default();
+    v.set_smfc(smfc);
+    v.set_tcfc(tcfc);
+    regs.scr().write_value(v);
+}
+
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_wait_tcf(regs: Regs, max_polls: u32) -> bool {
     for _ in 0..max_polls {
         if regs.sr().read().tcf() {
-            regs.scr().write(|w| w.set_tcfc(true));
+            write_scr_clear(regs, false, true);
             return true;
         }
         spin_loop();
@@ -139,10 +163,7 @@ pub(super) fn ram_wait_tcf(regs: Regs, max_polls: u32) -> bool {
 pub(super) fn ram_wait_smf(regs: Regs, max_polls: u32) -> bool {
     for _ in 0..max_polls {
         if regs.sr().read().smf() {
-            regs.scr().write(|w| {
-                w.set_smfc(true);
-                w.set_tcfc(true);
-            });
+            write_scr_clear(regs, true, true);
             return true;
         }
         spin_loop();
@@ -153,16 +174,16 @@ pub(super) fn ram_wait_smf(regs: Regs, max_polls: u32) -> bool {
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
 fn ram_configure_ccr1(regs: Regs, fmode: bool, dmode: u8, address_mode: u8, address_size: u8) {
-    regs.ccr1().modify(|w| {
-        w.set_fmode(fmode);
-        w.set_dmode(dmode);
-        w.set_dcyc(0);
-        w.set_absize(0);
-        w.set_abmode(0);
-        w.set_adsize(address_size);
-        w.set_admode(address_mode);
-        w.set_imode(1);
-    });
+    let mut v: Ccr1 = regs.ccr1().read();
+    v.set_fmode(fmode);
+    v.set_dmode(dmode);
+    v.set_dcyc(0);
+    v.set_absize(0);
+    v.set_abmode(0);
+    v.set_adsize(address_size);
+    v.set_admode(address_mode);
+    v.set_imode(1);
+    regs.ccr1().write_value(v);
 }
 
 #[inline(always)]
@@ -173,39 +194,44 @@ fn ram_configure_cmd1_read_stream(
     address_size: u8,
     dummy_cycles: u8,
 ) {
-    regs.ccr1().modify(|w| {
-        w.set_fmode(false);
-        w.set_dmode(1);
-        w.set_dcyc(dummy_cycles);
-        w.set_absize(0);
-        w.set_abmode(0);
-        w.set_adsize(address_size);
-        w.set_admode(address_mode);
-        w.set_imode(1);
-    });
+    let mut v: Ccr1 = regs.ccr1().read();
+    v.set_fmode(false);
+    v.set_dmode(1);
+    v.set_dcyc(dummy_cycles);
+    v.set_absize(0);
+    v.set_abmode(0);
+    v.set_adsize(address_size);
+    v.set_admode(address_mode);
+    v.set_imode(1);
+    regs.ccr1().write_value(v);
 }
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
 fn ram_clear_status_flags(regs: Regs) {
-    regs.scr().write(|w| {
-        w.set_smfc(true);
-        w.set_tcfc(true);
-    });
+    write_scr_clear(regs, true, true);
 }
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
 fn ram_issue_cmd1(regs: Regs, addr: u32, cmd: u8) {
-    regs.ar1().write(|w| w.set_addr(addr));
-    regs.cmdr1().write(|w| w.set_cmd(cmd));
+    let mut a = Ar1::default();
+    a.set_addr(addr);
+    regs.ar1().write_value(a);
+    let mut c = Cmdr1::default();
+    c.set_cmd(cmd);
+    regs.cmdr1().write_value(c);
 }
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
 fn ram_configure_wip_status_match(regs: Regs) {
-    regs.smr().write(|w| w.set_status(0));
-    regs.smkr().write(|w| w.set_mask(NOR_FLASH_WIP_MASK));
+    let mut s = Smr::default();
+    s.set_status(0);
+    regs.smr().write_value(s);
+    let mut m = Smkr::default();
+    m.set_mask(NOR_FLASH_WIP_MASK);
+    regs.smkr().write_value(m);
 }
 
 #[inline(never)]
@@ -235,38 +261,45 @@ pub(super) fn ram_configure_addr_only(regs: Regs, addr_size: u8) {
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_configure_cmd2_status_poll(regs: Regs, read_status_cmd: u8) {
-    regs.ccr2().modify(|w| {
-        w.set_fmode(false);
-        w.set_dmode(1);
-        w.set_dcyc(0);
-        w.set_absize(0);
-        w.set_abmode(0);
-        w.set_adsize(0);
-        w.set_admode(0);
-        w.set_imode(1);
-    });
-    regs.dlr2().write(|w| w.set_dlen(0));
-    regs.cmdr2().write(|w| w.set_cmd(read_status_cmd));
+    let mut v: Ccr2 = regs.ccr2().read();
+    v.set_fmode(false);
+    v.set_dmode(1);
+    v.set_dcyc(0);
+    v.set_absize(0);
+    v.set_abmode(0);
+    v.set_adsize(0);
+    v.set_admode(0);
+    v.set_imode(1);
+    regs.ccr2().write_value(v);
+
+    let mut d = Dlr2::default();
+    d.set_dlen(0);
+    regs.dlr2().write_value(d);
+
+    let mut c = Cmdr2::default();
+    c.set_cmd(read_status_cmd);
+    regs.cmdr2().write_value(c);
+
     ram_configure_wip_status_match(regs);
 }
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_begin_cmd2_status_poll(regs: Regs) {
-    regs.cr().modify(|w| {
-        w.set_cmd2e(true);
-        w.set_sme2(true);
-    });
+    let mut v: Cr = regs.cr().read();
+    v.set_cmd2e(true);
+    v.set_sme2(true);
+    regs.cr().write_value(v);
     ram_clear_status_flags(regs);
 }
 
 #[inline(always)]
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_end_cmd2_status_poll(regs: Regs) {
-    regs.cr().modify(|w| {
-        w.set_cmd2e(false);
-        w.set_sme2(false);
-    });
+    let mut v: Cr = regs.cr().read();
+    v.set_cmd2e(false);
+    v.set_sme2(false);
+    regs.cr().write_value(v);
     ram_clear_status_flags(regs);
 }
 
@@ -295,14 +328,35 @@ fn ram_pack_le_word(chunk: &[u8]) -> u32 {
     u32::from_le_bytes(word)
 }
 
+#[inline(always)]
+#[link_section = ".data.ramfunc"]
+fn ram_fifo_clear(regs: Regs, rx: bool, tx: bool) {
+    let mut v: Fifocr = regs.fifocr().read();
+    if rx {
+        v.set_rxclr(true);
+    }
+    if tx {
+        v.set_txclr(true);
+    }
+    regs.fifocr().write_value(v);
+}
+
+#[inline(always)]
+#[link_section = ".data.ramfunc"]
+fn ram_set_dlr1(regs: Regs, dlen: u32) {
+    let mut d = Dlr1::default();
+    d.set_dlen(dlen);
+    regs.dlr1().write_value(d);
+}
+
 #[inline(never)]
 #[link_section = ".data.ramfunc"]
 fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, ()> {
-    regs.fifocr().modify(|w| w.set_rxclr(true));
+    ram_fifo_clear(regs, true, false);
     ram_configure_status_read(regs);
-    regs.dlr1().write(|w| w.set_dlen(dlen));
+    ram_set_dlr1(regs, dlen);
 
-    regs.scr().write(|w| w.set_tcfc(true));
+    write_scr_clear(regs, false, true);
     ram_issue_cmd1(regs, 0, cmd);
 
     if !ram_wait_tcf(regs, max_polls) {
@@ -316,7 +370,7 @@ fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, 
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool {
     ram_configure_simple_cmd(regs);
-    regs.scr().write(|w| w.set_tcfc(true));
+    write_scr_clear(regs, false, true);
     ram_issue_cmd1(regs, 0, cmd);
     ram_wait_tcf(regs, max_polls)
 }
@@ -370,11 +424,11 @@ pub(super) fn ram_read_command_stream(
             return false;
         }
 
-        regs.fifocr().modify(|w| w.set_rxclr(true));
+        ram_fifo_clear(regs, true, false);
         ram_configure_cmd1_read_stream(regs, address_mode, address_size, dummy_cycles);
-        regs.dlr1().write(|w| w.set_dlen((step - 1) as u32));
+        ram_set_dlr1(regs, (step - 1) as u32);
 
-        regs.scr().write(|w| w.set_tcfc(true));
+        write_scr_clear(regs, false, true);
         ram_issue_cmd1(regs, addr.unwrap_or(0), cmd);
 
         if !ram_wait_tcf(regs, max_polls) {
@@ -419,18 +473,46 @@ pub(super) fn ram_program_chunk(
         return false;
     }
 
-    regs.fifocr().modify(|w| w.set_txclr(true));
+    ram_fifo_clear(regs, false, true);
 
+    // The MPI controller's TX FIFO is word-oriented and DLR1 must match the
+    // number of bytes pushed, otherwise the engine never finishes draining the
+    // FIFO and the WIP poll hangs forever. Round the transmission up to a
+    // 4-byte boundary, padding with 0xFF (a no-op for NOR flash because every
+    // unprogrammed bit is already 1, and AND-ing 1 with the current bit keeps
+    // it unchanged). Do not extend past a 256-byte page boundary — the SPI
+    // page-program command wraps at page boundaries, which would corrupt
+    // earlier bytes in the same page.
+    const PAGE: usize = 256;
+    let page_remaining = PAGE - ((addr as usize) & (PAGE - 1));
+    let aligned_len = ((data.len() + 3) & !3).min(page_remaining);
+    let send_len = if aligned_len >= data.len() {
+        aligned_len
+    } else {
+        data.len()
+    };
+
+    // Build each word manually — `copy_from_slice` may be emitted as an
+    // out-of-line function in `.text` (flash), which would cause a code-bus
+    // fetch from MPI2 mid-way through our XIP-safe section and deadlock.
     let mut idx = 0;
-    while idx < data.len() {
-        let take = min(4, data.len() - idx);
-        regs.dr()
-            .write(|w| w.set_data(ram_pack_le_word(&data[idx..idx + take])));
-        idx += take;
+    while idx < send_len {
+        let b0 = if idx     < data.len() { data[idx]     } else { 0xFF };
+        let b1 = if idx + 1 < data.len() { data[idx + 1] } else { 0xFF };
+        let b2 = if idx + 2 < data.len() { data[idx + 2] } else { 0xFF };
+        let b3 = if idx + 3 < data.len() { data[idx + 3] } else { 0xFF };
+        let word = (b0 as u32)
+            | ((b1 as u32) << 8)
+            | ((b2 as u32) << 16)
+            | ((b3 as u32) << 24);
+        let mut d = Dr::default();
+        d.set_data(word);
+        regs.dr().write_value(d);
+        idx += 4;
     }
 
     ram_configure_write_with_addr(regs, addr_size);
-    regs.dlr1().write(|w| w.set_dlen((data.len() - 1) as u32));
+    ram_set_dlr1(regs, (send_len - 1) as u32);
     ram_run_cmd2_status_poll(regs, read_status_cmd, addr, program_cmd, max_polls)
 }
 
@@ -564,15 +646,15 @@ define_ram_irq_wrappers! {
 #[link_section = ".data.ramfunc"]
 pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool {
     ram_configure_status_read(regs);
-    regs.dlr1().write(|w| w.set_dlen(0));
+    ram_set_dlr1(regs, 0);
 
     ram_configure_wip_status_match(regs);
 
-    regs.cr().modify(|w| {
-        w.set_cmd2e(false);
-        w.set_sme2(false);
-        w.set_sme1(true);
-    });
+    let mut v: Cr = regs.cr().read();
+    v.set_cmd2e(false);
+    v.set_sme2(false);
+    v.set_sme1(true);
+    regs.cr().write_value(v);
 
     ram_clear_status_flags(regs);
 
@@ -580,7 +662,9 @@ pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u3
 
     let ok = ram_wait_smf(regs, max_polls);
 
-    regs.cr().modify(|w| w.set_sme1(false));
+    let mut v: Cr = regs.cr().read();
+    v.set_sme1(false);
+    regs.cr().write_value(v);
     ram_clear_status_flags(regs);
 
     ok

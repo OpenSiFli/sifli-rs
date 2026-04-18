@@ -2,16 +2,19 @@
 
 use super::config::{ActConfig, EmConfig, RomConfig};
 use crate::syscfg;
-use core::{mem, ptr};
+use core::ptr;
 
 //=============================================================================
 // ROM Configuration Layout
 //=============================================================================
 
-/// LCPU ROM Configuration Block Layout.
+/// LCPU ROM Configuration Block Layout (common header only).
 ///
-/// Maps to the memory structure expected by LCPU ROM.
-/// Offsets and fields align with SiFli-SDK `lcpu_config_type_int.h`.
+/// Covers the fields up to offset 28. Letter-series extensions
+/// (ke_mem_config at 128, bt_rom_config at 172, hcpu_ipc_addr at 200) are
+/// written at absolute offsets in `rom_config()` rather than via struct
+/// fields — `repr(C)` alignment rules make them hard to lay out exactly
+/// against `lcpu_config_type_int.h`.
 #[repr(C)]
 pub struct RomControlBlock {
     /// Magic number (0x45457878).
@@ -27,23 +30,6 @@ pub struct RomControlBlock {
     /// Clock configuration.
     pub is_xtal_enable: u8, // 0x1A (26)
     pub is_rccal_in_l: u8, // 0x1B (27)
-
-    // Padding to reach 0xAC (172).
-    // 28 (0x1C) to 172 (0xAC) = 144 bytes.
-    // Contains: is_soft_cvsd(4) + em_buf(82) + pad(2) + act_config(12) + ke_mem(44)
-    pub _pad2: [u8; 144], // 0x1C..0xAC (28..172)
-
-    /// Letter Series (A4/B4) extended configuration (BT/BLE).
-    pub bt_config: BtRomConfig, // 0xAC (172)
-
-    // Padding to reach 0xC8 (200).
-    // BtRomConfig size is 21 bytes.
-    // 172 + 21 = 193.
-    // 200 - 193 = 7 bytes.
-    pub _pad3: [u8; 7],
-
-    /// HCPU to LCPU IPC address (Letter Series only).
-    pub hcpu_ipc_addr: u32, // 0xC8 (200)
 }
 
 /// BT/BLE specific configuration (A4+).
@@ -244,16 +230,26 @@ pub enum Error {
 
 /// Configure LCPU ROM parameters.
 ///
-/// Replaces `lcpu_rom_config`.
+/// Replaces `lcpu_rom_config`. Uses absolute offsets for Letter-series fields
+/// to match `lcpu_config_type_int.h` exactly — the `RomControlBlock` struct
+/// layout under `repr(C)` does not match the SDK because `BtRomConfig` is
+/// 24 bytes (u32 alignment) rather than 21.
 pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) -> Result<(), Error> {
+    // SDK offsets from `lcpu_config_type_int.h`.
+    const OFFSET_KE_MEM_CONFIG: usize = 128;
+    const OFFSET_BT_ROM_CONFIG: usize = 172;
+    const OFFSET_HCPU_IPC_ADDR: usize = 200;
+    // Letter-series total config size (LCPU_CONFIG_ROM_A4_SIZE).
+    const LCPU_CONFIG_ROM_A4_SIZE: usize = 0xCC;
+    // Offset of `max_nb_of_hci_completed` within `hal_lcpu_ble_mem_config_t`:
+    // bit_valid(4) + 6 pointers(24) + 6 u16 sizes(12) = 40.
+    const OFFSET_MAX_NB_HCI_COMPLETED_IN_KE: usize = 40;
+
     let base = RomControlBlock::address();
     let is_letter = syscfg::read_idr().revision().is_letter_series();
 
-    // Calculate size to clear/write.
-    // A3: 0x40 (64 bytes)
-    // Letter: 0xCC (204 bytes) -> sizeof(RomControlBlock) is 204
     let size = if is_letter {
-        mem::size_of::<RomControlBlock>()
+        LCPU_CONFIG_ROM_A4_SIZE
     } else {
         0x40 // LCPU_CONFIG_ROM_SIZE
     };
@@ -267,7 +263,7 @@ pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) ->
         // 1. Clear config area.
         ptr::write_bytes(base as *mut u8, 0, size);
 
-        // 2. Map structure to memory.
+        // 2. Map structure to memory for the common header.
         let block = &mut *(base as *mut RomControlBlock);
 
         // 3. Write common fields.
@@ -278,18 +274,24 @@ pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) ->
         ptr::write_volatile(&mut block.wdt_time, config.wdt_time);
         ptr::write_volatile(&mut block.wdt_clk, config.wdt_clk);
 
-        // 4. Write Letter Series specific fields.
+        // 4. Write Letter Series specific fields at absolute offsets.
         if is_letter {
-            // HCPU IPC Address
+            // KE_BUF (ke_mem_config) — the SDK sets bit_valid = 1 << 6 and
+            // max_nb_of_hci_completed = 6 via HAL_LCPU_CONFIG_BT_KE_BUF.
+            // Without this the LCPU ROM may use an uninitialized or zero value
+            // which can prevent HCI command-complete events from being sent.
+            let ke_base = base + OFFSET_KE_MEM_CONFIG;
+            ptr::write_volatile(ke_base as *mut u32, 1u32 << 6); // bit_valid
             ptr::write_volatile(
-                &mut block.hcpu_ipc_addr,
-                RomControlBlock::HCPU2LCPU_MB_CH1_BUF_START_ADDR as u32,
-            );
+                (ke_base + OFFSET_MAX_NB_HCI_COMPLETED_IN_KE) as *mut i8,
+                6,
+            ); // max_nb_of_hci_completed
 
-            // BT Config — must include sleep bits so ROM disables sleep
-            // (without SLEEP_MODE/SLEEP_ENABLED in bit_valid, ROM uses internal
-            // defaults which may enable sleep, causing 0x3E connection timeouts
-            // since we lack ble_standby_sleep_after_handler).
+            // BT Config (bt_rom_config, 24 bytes at offset 172).
+            // Must include sleep bits so ROM disables sleep — without
+            // SLEEP_MODE/SLEEP_ENABLED in bit_valid, ROM uses internal defaults
+            // that may enable sleep, causing 0x3E connection timeouts since we
+            // lack ble_standby_sleep_after_handler.
             let bt_cfg = BtRomConfig {
                 bit_valid: (1 << 10)  // is_fpga
                     | (1 << 7)        // rc_cycle
@@ -307,9 +309,14 @@ pub fn rom_config(config: &RomConfig, ctrl: &super::config::ControllerConfig) ->
                 is_fpga: 0,
                 ..Default::default()
             };
+            ptr::write_volatile((base + OFFSET_BT_ROM_CONFIG) as *mut BtRomConfig, bt_cfg);
 
-            // Write BT config struct
-            ptr::write_volatile(&mut block.bt_config, bt_cfg);
+            // HCPU IPC address at offset 200 (NOT via the struct field, which
+            // sits at offset 204 due to u32 alignment of BtRomConfig).
+            ptr::write_volatile(
+                (base + OFFSET_HCPU_IPC_ADDR) as *mut u32,
+                RomControlBlock::HCPU2LCPU_MB_CH1_BUF_START_ADDR as u32,
+            );
 
             // EM buffer configuration
             if let Some(ref em) = config.em_config {

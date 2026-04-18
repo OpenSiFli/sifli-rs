@@ -596,7 +596,20 @@ impl embedded_io_async::ErrorType for IpcQueueTx {
 
 impl embedded_io_async::Write for IpcQueueTx {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        IpcQueueTx::write(self, buf)
+        // `embedded_io_async::Write::write` must write at least one byte before
+        // returning Ok. The non-blocking `IpcQueueTx::write` returns Ok(0) when
+        // the ring buffer is full. Spin-yield until space frees up so we honor
+        // the contract; the LCPU drains the queue on its own schedule.
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            let n = IpcQueueTx::write(self, buf)?;
+            if n > 0 {
+                return Ok(n);
+            }
+            embassy_futures::yield_now().await;
+        }
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
@@ -623,8 +636,18 @@ impl embedded_io_async::Read for IpcQueue {
 
 impl embedded_io_async::Write for IpcQueue {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        // IpcQueue::write is non-blocking, call directly
-        IpcQueue::write(self, buf)
+        // Same contract concern as `IpcQueueTx`: never return Ok(0) for a
+        // non-empty input. Yield until space frees up.
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            let n = IpcQueue::write(self, buf)?;
+            if n > 0 {
+                return Ok(n);
+            }
+            embassy_futures::yield_now().await;
+        }
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {

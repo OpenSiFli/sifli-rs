@@ -14,6 +14,6 @@ target = "thumbv8m.main-none-eabihf"
 [env]
 DEFMT_LOG = "info"
 SIFLI_UART_DEBUG = "1"
-SIFLI_SFTOOL_PORT = "<YOUR_PORT_HERE>"
+SIFLI_SFTOOL_PORT = "/dev/cu.wchusbserial59810930261"
 # SIFLI_SFTOOL_EXTRA_ARGS = "--compat true"
 # SIFLI_PROBE_EXTRA_ARGS = ""

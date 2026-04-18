@@ -385,6 +385,12 @@ impl Lcpu {
         debug!("Step 8: Releasing LCPU to run");
         self.release_lcpu()?;
 
+        // 9. Settle delay — matches SDK `HAL_Delay_us(5000)` at end of
+        //    `lcpu_power_on`. Gives LCPU time to boot, finish its own
+        //    bluetooth_init(), and emit the warmup event before the caller
+        //    starts draining the HCI queue.
+        crate::cortex_m_blocking_delay_us(5000);
+
         // _w drops here → cancel_lcpu_active_request, allow LP to enter low power.
         Ok(())
     }

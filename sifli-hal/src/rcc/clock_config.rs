@@ -562,11 +562,8 @@ pub(crate) unsafe fn init(config: Config) {
 
             if need_reconfig {
                 // Safe DLL2 reconfiguration procedure:
-                // Step 1: Switch Flash/PSRAM (MPI) clocks away from DLL2 to prevent XIP crash
-                let old_mpi1_sel = HPSYS_RCC.csr().read().sel_mpi1();
-                let old_mpi2_sel = HPSYS_RCC.csr().read().sel_mpi2();
-
-                // Temporarily switch to clk_peri_hpsys
+                // Step 1: park MPI1/MPI2 on `Peri` so an in-flight XIP fetch can't see
+                // DLL2 wobble while we tear it down and bring it back up.
                 HPSYS_RCC.csr().modify(|w| {
                     w.set_sel_mpi1(Mpisel::Peri);
                     w.set_sel_mpi2(Mpisel::Peri);
@@ -595,18 +592,17 @@ pub(crate) unsafe fn init(config: Config) {
                 while !HPSYS_RCC.dllcr(1).read().ready() {
                     // wait for DLL ready
                 }
-
-                // Step 3: Restore MPI clock sources
-                HPSYS_RCC.csr().modify(|w| {
-                    if old_mpi1_sel == Mpisel::Dll2 {
-                        w.set_sel_mpi1(Mpisel::Dll2);
-                    }
-                    if old_mpi2_sel == Mpisel::Dll2 {
-                        w.set_sel_mpi2(Mpisel::Dll2);
-                    }
-                });
             }
         }
+
+        // Apply user-requested MPI clock sources. This must run regardless of whether
+        // DLL2 was reconfigured: when DLL2 was reconfigured we previously parked these
+        // on `Peri`, and when it wasn't, the bootloader's selection (typically `Dll2`
+        // for XIP boot) would otherwise persist and ignore `config.mux`.
+        HPSYS_RCC.csr().modify(|w| {
+            w.set_sel_mpi1(config.mux.mpi1sel);
+            w.set_sel_mpi2(config.mux.mpi2sel);
+        });
 
         // other MUX configuration
 
