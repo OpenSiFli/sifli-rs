@@ -55,6 +55,17 @@ where
         lcpu.reset_and_halt()?;
         rom_config::init(rev, &config.rom, &config.ble.controller);
 
+        // Switch LPSYS sysclk + peri onto HXT48 before LCPU starts running.
+        // Chip default is HRC48 (internal RC, ±2-5%). BLE link layer needs
+        // ±50ppm — running on HRC48 means HCI commands return success but no
+        // host can lock onto the air packets. SDK does this in
+        // `bsp_init.c::HAL_PreInit` via
+        // `HAL_RCC_LCPU_ClockSelect(RCC_CLK_MOD_LP_PERI, RCC_CLK_PERI_HXT48)`
+        // and inside `HAL_RCC_SetMacFreq`. The chip-side HXT48 must already be
+        // enabled by the bootloader for this to work.
+        rcc::select_lpsys_sysclk(rcc::lpsys_vals::Sysclk::Hxt48);
+        rcc::select_lpsys_peri(rcc::lpsys_vals::mux::Perisel::Hxt48);
+
         if !config.skip_frequency_check {
             rcc::ensure_safe_lcpu_frequency().map_err(|_| LcpuError::RccError)?;
         }
