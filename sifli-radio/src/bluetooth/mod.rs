@@ -95,6 +95,14 @@ where
         lcpu.release()?;
     }
 
+    // SDK does `HAL_Delay_us(5000)` here (`bf0_lcpu_init.c::lcpu_power_on`)
+    // after dropping the LP active request, before any HCI traffic. Skipping
+    // it doesn't always cause a visible failure — `consume_warmup_event` will
+    // wait however long the LCPU needs — but the SDK's choice deserves a
+    // matching pause; some LCPU patch stages briefly disable interrupts and
+    // a too-eager HCI command can race with that.
+    sifli_hal::cortex_m_blocking_delay_us(5_000);
+
     // Phase 3: Warmup event + controller init
     {
         let _w = unsafe { WakeGuard::acquire() };
