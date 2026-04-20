@@ -61,10 +61,29 @@ where
         // host can lock onto the air packets. SDK does this in
         // `bsp_init.c::HAL_PreInit` via
         // `HAL_RCC_LCPU_ClockSelect(RCC_CLK_MOD_LP_PERI, RCC_CLK_PERI_HXT48)`
-        // and inside `HAL_RCC_SetMacFreq`. The chip-side HXT48 must already be
-        // enabled by the bootloader for this to work.
+        // and inside `HAL_RCC_SetMacFreq`.
+        //
+        // HAL_PreInit only auto-starts the crystal when its own sysclk is
+        // already Hxt48 (`clock_config::init` lines 482-488). A firmware whose
+        // boot RccConfig picks DLL1 never takes that branch, so HXT48 stays
+        // off and switching LPSYS to it just parks the LCPU on a dead clock
+        // line. Explicitly request the crystal before flipping the muxes.
+        rcc::ensure_hxt48_ready();
         rcc::select_lpsys_sysclk(rcc::lpsys_vals::Sysclk::Hxt48);
         rcc::select_lpsys_peri(rcc::lpsys_vals::mux::Perisel::Hxt48);
+
+        // Start the cross-core global timer. SDK equivalent:
+        // `HAL_HPAON_StartGTimer()` in `bf0_hal_hpaon.c`, called from
+        // `HAL_PreInit` on the HCPU and again on the LCPU side of bsp_init.
+        // The BLE link-layer scheduler uses GTIMER as its wall-clock; without
+        // `CR1.GTIM_EN` on both HPSYS_AON and LPSYS_AON the controller reports
+        // success for HCI `Le_Set_Adv_Enable` but never actually triggers a
+        // radio event, so the device is invisible on the air.
+        use crate::pac::{HPSYS_AON, LPSYS_AON};
+        LPSYS_AON.cr1().modify(|w| w.set_gtim_en(true));
+        HPSYS_AON.cr1().modify(|w| w.set_gtim_en(true));
+        // Sync the two counters. SDK writes 1, hardware latches both sides.
+        HPSYS_AON.gtimr().write(|w| w.0 = 1);
 
         if !config.skip_frequency_check {
             rcc::ensure_safe_lcpu_frequency().map_err(|_| LcpuError::RccError)?;

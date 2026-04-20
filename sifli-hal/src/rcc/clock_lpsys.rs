@@ -228,6 +228,39 @@ pub fn select_lpsys_peri(source: lpsys_vals::mux::Perisel) {
     });
 }
 
+/// Request the HXT48 crystal on both HPSYS and LPSYS domains and block until
+/// the oscillator reports ready to each.
+///
+/// HXT48 is a single physical crystal exposed to each AON domain via its own
+/// request/ready bits (`HPSYS_AON.ACR` and `LPSYS_AON.ACR`). Both domains
+/// gate independently; starting the crystal from the HPSYS side is not
+/// enough — LPSYS peripherals only see it after LPSYS_AON asserts its own
+/// request. SDK equivalents: `HAL_HPAON_EnableXT48()` in `bf0_hal_hpaon.c`
+/// for HPSYS and `HAL_LPAON_EnableXT48()` in `bf0_hal_lpaon.c` for LPSYS —
+/// the LCPU-side `bsp_init.c::HAL_PreInit` at `#elif defined(SOC_BF0_LCPU)`
+/// calls the latter right before selecting HXT48 as LCPU sysclk.
+///
+/// `HAL_PreInit` on the HCPU only kicks the HPSYS-side crystal if its own
+/// sysclk is already Hxt48 (`clock_config::init` lines 482-488) — a firmware
+/// whose boot `RccConfig` selects DLL1 never reaches that path, so neither
+/// domain's HXT48 is alive even after `HAL_PreInit` sets `sel_peri = Hxt48`.
+/// The sifli-rs LCPU firmware (used by `sifli-radio`) is a BLE link-layer
+/// image, not the SDK's bsp_init, so it does not do its own LPAON enable.
+/// Sub-systems that need the crystal (BLE LCPU, USB clock, etc.) must call
+/// this from the HCPU before releasing the LCPU.
+pub fn ensure_hxt48_ready() {
+    use crate::pac::{HPSYS_AON, LPSYS_AON};
+
+    if !HPSYS_AON.acr().read().hxt48_rdy() {
+        HPSYS_AON.acr().modify(|w| w.set_hxt48_req(true));
+        while !HPSYS_AON.acr().read().hxt48_rdy() {}
+    }
+    if !LPSYS_AON.acr().read().hxt48_rdy() {
+        LPSYS_AON.acr().modify(|w| w.set_hxt48_req(true));
+        while !LPSYS_AON.acr().read().hxt48_rdy() {}
+    }
+}
+
 // =============================================================================
 // LCPU Wake Management
 // =============================================================================
