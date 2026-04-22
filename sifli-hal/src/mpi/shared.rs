@@ -111,7 +111,7 @@ pub(super) fn ram_irq_restore(saved_primask: u32) {
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_wait_not_busy(regs: Regs, max_polls: u32) -> bool {
+pub(super) fn ram_wait_not_busy(regs: Regs) -> bool {
     for _ in 0..max_polls {
         if !regs.sr().read().busy() {
             return true;
@@ -123,7 +123,7 @@ pub(super) fn ram_wait_not_busy(regs: Regs, max_polls: u32) -> bool {
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_wait_tcf(regs: Regs, max_polls: u32) -> bool {
+pub(super) fn ram_wait_tcf(regs: Regs) -> bool {
     for _ in 0..max_polls {
         if regs.sr().read().tcf() {
             regs.scr().write(|w| w.set_tcfc(true));
@@ -136,8 +136,17 @@ pub(super) fn ram_wait_tcf(regs: Regs, max_polls: u32) -> bool {
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_wait_smf(regs: Regs, max_polls: u32) -> bool {
-    for _ in 0..max_polls {
+pub(super) fn ram_wait_smf(regs: Regs) -> bool {
+    // IMPORTANT: do NOT collapse this into `loop { ... }`. A plain infinite
+    // loop codegens to a 5-cycle hot path (ldr/lsls/bmi/yield/b) which
+    // polls SR faster than the MPI's SME2 state machine can reliably
+    // refresh SMF after the CMDR1 store that triggered the operation. The
+    // symptom is a silent hang on the first post-erase page program: the
+    // tight loop never sees SMF set, flash stays busy, and IRQs eventually
+    // fault on the next XIP instruction fetch. The counter-based form
+    // below inserts ~5 extra cycles of peripheral settling time per
+    // iteration and polls reliably.
+    for _ in 0..u32::MAX {
         if regs.sr().read().smf() {
             regs.scr().write(|w| {
                 w.set_smfc(true);
@@ -277,12 +286,12 @@ fn ram_run_cmd2_status_poll(
     read_status_cmd: u8,
     cmd_addr: u32,
     cmd: u8,
-    max_polls: u32,
+    
 ) -> bool {
     ram_configure_cmd2_status_poll(regs, read_status_cmd);
     ram_begin_cmd2_status_poll(regs);
     ram_issue_cmd1(regs, cmd_addr, cmd);
-    let ok = ram_wait_smf(regs, max_polls);
+    let ok = ram_wait_smf(regs);
     ram_end_cmd2_status_poll(regs);
     ok
 }
@@ -297,7 +306,7 @@ fn ram_pack_le_word(chunk: &[u8]) -> u32 {
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, ()> {
+fn ram_read_data(regs: Regs, cmd: u8, dlen: u32) -> Result<u32, ()> {
     regs.fifocr().modify(|w| w.set_rxclr(true));
     ram_configure_status_read(regs);
     regs.dlr1().write(|w| w.set_dlen(dlen));
@@ -314,7 +323,7 @@ fn ram_read_data(regs: Regs, cmd: u8, dlen: u32, max_polls: u32) -> Result<u32, 
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool {
+pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8) -> bool {
     ram_configure_simple_cmd(regs);
     regs.scr().write(|w| w.set_tcfc(true));
     ram_issue_cmd1(regs, 0, cmd);
@@ -323,7 +332,7 @@ pub(super) fn ram_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool 
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()> {
+pub(super) fn ram_read_jedec_id(regs: Regs, cmd: u8) -> Result<u32, ()> {
     // Wait for MPI to be idle before issuing manual command (critical for XIP)
     if !ram_wait_not_busy(regs, max_polls) {
         return Err(());
@@ -335,7 +344,7 @@ pub(super) fn ram_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()> {
+pub(super) fn ram_read_status(regs: Regs, cmd: u8) -> Result<u8, ()> {
     if !ram_wait_not_busy(regs, max_polls) {
         return Err(());
     }
@@ -353,7 +362,6 @@ pub(super) fn ram_read_command_stream(
     addr_size: u8,
     dummy_cycles: u8,
     out: &mut [u8],
-    max_polls: u32,
 ) -> bool {
     if out.is_empty() {
         return true;
@@ -409,7 +417,7 @@ pub(super) fn ram_program_chunk(
     addr: u32,
     addr_size: u8,
     data: &[u8],
-    max_polls: u32,
+    
 ) -> bool {
     if data.is_empty() || data.len() > FIFO_SIZE_BYTES {
         return false;
@@ -443,7 +451,7 @@ pub(super) fn ram_erase_sector(
     read_status_cmd: u8,
     addr: u32,
     addr_size: u8,
-    max_polls: u32,
+    
 ) -> bool {
     if !ram_issue_simple_cmd(regs, wren_cmd, max_polls) {
         return false;
@@ -460,7 +468,7 @@ pub(super) fn ram_erase_chip(
     wren_cmd: u8,
     chip_erase_cmd: u8,
     read_status_cmd: u8,
-    max_polls: u32,
+    
 ) -> bool {
     if !ram_wait_not_busy(regs, max_polls) {
         return false;
@@ -504,11 +512,11 @@ define_ram_irq_wrappers! {
         addr_size: u8,
         dummy_cycles: u8,
         out: &mut [u8],
-        max_polls: u32,
+        
     ) -> bool = ram_read_command_stream(regs, cmd, addr, addr_size, dummy_cycles, out, max_polls);
-    fn ram_wrapper_read_jedec_id(regs: Regs, cmd: u8, max_polls: u32) -> Result<u32, ()>
+    fn ram_wrapper_read_jedec_id(regs: Regs, cmd: u8) -> Result<u32, ()>
         = ram_read_jedec_id(regs, cmd, max_polls);
-    fn ram_wrapper_read_status(regs: Regs, cmd: u8, max_polls: u32) -> Result<u8, ()>
+    fn ram_wrapper_read_status(regs: Regs, cmd: u8) -> Result<u8, ()>
         = ram_read_status(regs, cmd, max_polls);
     #[allow(clippy::too_many_arguments)]
     fn ram_wrapper_program_chunk(
@@ -519,7 +527,7 @@ define_ram_irq_wrappers! {
         addr: u32,
         addr_size: u8,
         data: &[u8],
-        max_polls: u32,
+        
     ) -> bool = ram_program_chunk(
         regs,
         wren_cmd,
@@ -537,7 +545,7 @@ define_ram_irq_wrappers! {
         read_status_cmd: u8,
         addr: u32,
         addr_size: u8,
-        max_polls: u32,
+        
     ) -> bool = ram_erase_sector(
         regs,
         wren_cmd,
@@ -552,17 +560,17 @@ define_ram_irq_wrappers! {
         wren_cmd: u8,
         chip_erase_cmd: u8,
         read_status_cmd: u8,
-        max_polls: u32,
+        
     ) -> bool = ram_erase_chip(regs, wren_cmd, chip_erase_cmd, read_status_cmd, max_polls);
-    fn ram_wrapper_issue_simple_cmd(regs: Regs, cmd: u8, max_polls: u32) -> bool
+    fn ram_wrapper_issue_simple_cmd(regs: Regs, cmd: u8) -> bool
         = ram_issue_simple_cmd(regs, cmd, max_polls);
-    fn ram_wrapper_wait_ready(regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool
+    fn ram_wrapper_wait_ready(regs: Regs, read_status_cmd: u8) -> bool
         = ram_wait_ready_sme1(regs, read_status_cmd, max_polls);
 }
 
 #[inline(never)]
 #[unsafe(link_section = ".data.ramfunc")]
-pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u32) -> bool {
+pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8) -> bool {
     ram_configure_status_read(regs);
     regs.dlr1().write(|w| w.set_dlen(0));
 
@@ -578,7 +586,7 @@ pub(super) fn ram_wait_ready_sme1(regs: Regs, read_status_cmd: u8, max_polls: u3
 
     ram_issue_cmd1(regs, 0, read_status_cmd);
 
-    let ok = ram_wait_smf(regs, max_polls);
+    let ok = ram_wait_smf(regs);
 
     regs.cr().modify(|w| w.set_sme1(false));
     ram_clear_status_flags(regs);
