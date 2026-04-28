@@ -220,7 +220,8 @@ pub fn select_lpsys_sysclk(source: lpsys_vals::Sysclk) {
 /// with [`select_lpsys_sysclk`], this is what `bsp_init.c::HAL_PreInit` does
 /// before BLE bring-up. The LCPU's BLE controller needs to be on the
 /// crystal-locked HXT48; running it on HRC48 (chip default) leaves the link
-/// layer ±2-5% off frequency, far outside BLE's ±50ppm window
+/// layer ±2-5% off frequency, far outside BLE's ±50ppm window — HCI commands
+/// return success but no host can lock onto the air packets.
 pub fn select_lpsys_peri(source: lpsys_vals::mux::Perisel) {
     LPSYS_RCC.csr().modify(|w| {
         w.set_sel_peri(source);

@@ -26,6 +26,9 @@ pub mod lcpu;
 pub(crate) mod lpaon;
 pub mod ram;
 pub mod mailbox;
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+// mpi mod is gated to prevent testing on host failure(there's ramfunc in mpi mod)
+pub mod mpi;
 pub mod patch;
 pub mod pmu;
 pub mod rcc;

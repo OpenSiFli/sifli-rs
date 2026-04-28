@@ -56,6 +56,12 @@ where
         rom_config::init(rev, &config.rom, &config.ble.controller);
 
         // Switch LPSYS sysclk + peri onto HXT48 before LCPU starts running.
+        // Chip default is HRC48 (internal RC, ±2-5%). BLE link layer needs
+        // ±50ppm — running on HRC48 means HCI commands return success but no
+        // host can lock onto the air packets. SDK does this in
+        // `bsp_init.c::HAL_PreInit` via
+        // `HAL_RCC_LCPU_ClockSelect(RCC_CLK_MOD_LP_PERI, RCC_CLK_PERI_HXT48)`
+        // and inside `HAL_RCC_SetMacFreq`.
         //
         // HAL_PreInit only auto-starts the crystal when its own sysclk is
         // already Hxt48 (`clock_config::init` lines 482-488). A firmware whose
@@ -69,7 +75,6 @@ where
         // Start the cross-core global timer. SDK equivalent:
         // `HAL_HPAON_StartGTimer()` in `bf0_hal_hpaon.c`, called from
         // `HAL_PreInit` on the HCPU and again on the LCPU side of bsp_init.
-        //
         // The BLE link-layer scheduler uses GTIMER as its wall-clock; without
         // `CR1.GTIM_EN` on both HPSYS_AON and LPSYS_AON the controller reports
         // success for HCI `Le_Set_Adv_Enable` but never actually triggers a
@@ -108,6 +113,14 @@ where
 
         lcpu.release()?;
     }
+
+    // SDK does `HAL_Delay_us(5000)` here (`bf0_lcpu_init.c::lcpu_power_on`)
+    // after dropping the LP active request, before any HCI traffic. Skipping
+    // it doesn't always cause a visible failure — `consume_warmup_event` will
+    // wait however long the LCPU needs — but the SDK's choice deserves a
+    // matching pause; some LCPU patch stages briefly disable interrupts and
+    // a too-eager HCI command can race with that.
+    sifli_hal::cortex_m_blocking_delay_us(5_000);
 
     // Phase 3: Warmup event + controller init
     {

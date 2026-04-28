@@ -49,6 +49,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let p = sifli_hal::init(Default::default());
 
     // Load factory PMU trim from eFUSE — equivalent to SDK `HAL_PMU_LoadCalData`.
+    // Without it the RF front-end supplies are off-spec and BLE goes silent
+    // over the air even though HCI commands report success.
     match Efuse::new(p.EFUSEC) {
         Ok(efuse) => {
             let applied = pmu::apply_calibration(efuse.calibration());

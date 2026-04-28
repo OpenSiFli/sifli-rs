@@ -6,7 +6,11 @@ use crate::syscfg;
 
 /// Apply factory PMU calibration values from EFUSE bank1 to the PMU registers.
 ///
-/// Equivalent to `HAL_PMU_LoadCalData()` from the SDK (drivers/hal/bf0_hal_pmu.c).
+/// Equivalent to `HAL_PMU_LoadCalData()` from the SDK
+/// (drivers/hal/bf0_hal_pmu.c). Without this, the BUCK / LPSYS_LDO / VRET /
+/// PERI_LDO / AON_BG run on chip-default voltages, which leaves the RF
+/// front-end supplies slightly off-spec — HCI commands will succeed but
+/// advertising packets may not actually reach the air.
 ///
 /// Returns `false` if the EFUSE bank looks blank (`hpsys_ldo_vout == 0`),
 /// meaning the part was never ATE-calibrated; in that case nothing is
