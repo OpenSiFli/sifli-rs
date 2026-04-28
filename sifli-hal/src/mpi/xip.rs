@@ -25,36 +25,36 @@ impl Exec {
     #[inline(always)]
     pub(crate) fn issue_simple_cmd(self, cmd: u8) -> bool {
         if self.xip_safe {
-            super::shared::ram_wrapper_issue_simple_cmd(self.regs, cmd, self.max_polls)
+            super::shared::ram_wrapper_issue_simple_cmd(self.regs, cmd)
         } else {
-            super::shared::ram_issue_simple_cmd(self.regs, cmd, self.max_polls)
+            super::shared::ram_issue_simple_cmd(self.regs, cmd)
         }
     }
 
     #[inline(always)]
     pub(crate) fn wait_ready(self, read_status_cmd: u8) -> bool {
         if self.xip_safe {
-            super::shared::ram_wrapper_wait_ready(self.regs, read_status_cmd, self.max_polls)
+            super::shared::ram_wrapper_wait_ready(self.regs, read_status_cmd)
         } else {
-            super::shared::ram_wait_ready_sme1(self.regs, read_status_cmd, self.max_polls)
+            super::shared::ram_wait_ready_sme1(self.regs, read_status_cmd)
         }
     }
 
     #[inline(always)]
     pub(crate) fn read_status(self, cmd: u8) -> Result<u8, ()> {
         if self.xip_safe {
-            super::shared::ram_wrapper_read_status(self.regs, cmd, self.max_polls)
+            super::shared::ram_wrapper_read_status(self.regs, cmd)
         } else {
-            super::shared::ram_read_status(self.regs, cmd, self.max_polls)
+            super::shared::ram_read_status(self.regs, cmd)
         }
     }
 
     #[inline(always)]
     pub(crate) fn read_jedec_id(self, cmd: u8) -> Result<u32, ()> {
         if self.xip_safe {
-            super::shared::ram_wrapper_read_jedec_id(self.regs, cmd, self.max_polls)
+            super::shared::ram_wrapper_read_jedec_id(self.regs, cmd)
         } else {
-            super::shared::ram_read_jedec_id(self.regs, cmd, self.max_polls)
+            super::shared::ram_read_jedec_id(self.regs, cmd)
         }
     }
 
@@ -75,7 +75,6 @@ impl Exec {
                 addr_size,
                 dummy_cycles,
                 out,
-                self.max_polls,
             )
         } else {
             super::shared::ram_read_command_stream(
@@ -85,7 +84,6 @@ impl Exec {
                 addr_size,
                 dummy_cycles,
                 out,
-                self.max_polls,
             )
         }
     }
@@ -109,7 +107,6 @@ impl Exec {
                 addr,
                 addr_size,
                 data,
-                self.max_polls,
             )
         } else {
             super::shared::ram_program_chunk(
@@ -120,7 +117,6 @@ impl Exec {
                 addr,
                 addr_size,
                 data,
-                self.max_polls,
             )
         }
     }
@@ -142,7 +138,6 @@ impl Exec {
                 read_status_cmd,
                 addr,
                 addr_size,
-                self.max_polls,
             )
         } else {
             super::shared::ram_erase_sector(
@@ -152,7 +147,6 @@ impl Exec {
                 read_status_cmd,
                 addr,
                 addr_size,
-                self.max_polls,
             )
         }
     }
@@ -165,7 +159,6 @@ impl Exec {
                 wren_cmd,
                 chip_erase_cmd,
                 read_status_cmd,
-                self.max_polls,
             )
         } else {
             super::shared::ram_erase_chip(
@@ -173,7 +166,6 @@ impl Exec {
                 wren_cmd,
                 chip_erase_cmd,
                 read_status_cmd,
-                self.max_polls,
             )
         }
     }
@@ -200,13 +192,13 @@ pub(crate) fn irq_restore(saved_primask: u32) {
 }
 
 #[inline(always)]
-pub(crate) fn wait_not_busy(regs: Regs, max_polls: u32) -> bool {
-    super::shared::ram_wait_not_busy(regs, max_polls)
+pub(crate) fn wait_not_busy(regs: Regs, _max_polls: u32) -> bool {
+    super::shared::ram_wait_not_busy(regs)
 }
 
 #[inline(always)]
-pub(crate) fn wait_transfer_complete(regs: Regs, max_polls: u32) -> bool {
-    super::shared::ram_wait_tcf(regs, max_polls)
+pub(crate) fn wait_transfer_complete(regs: Regs, _max_polls: u32) -> bool {
+    super::shared::ram_wait_tcf(regs)
 }
 
 #[inline(always)]
